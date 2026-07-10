@@ -28,6 +28,10 @@ you allow the browser prompt — denial is silently tolerated), flies the map to
 your position, drops a pulsing marker, and builds a live **SITREP briefing**
 that refreshes every 60 s:
 
+- **⚠ ANOMALIES DETECTED** — a correlation pass across every feed that
+  surfaces the outliers first: aircraft squawking 7500/7600/7700, red/orange
+  GDACS disaster alerts, M5+ earthquakes, geomagnetic storms (Kp ≥ 5), M/X
+  solar flares, and internet outages — each with a VIEW jump
 - ⚠ active weather alerts covering your exact point (NWS point query)
 - 🌦 local conditions (Open-Meteo)
 - ✈ every aircraft within 100 nm of you (auto-enabled layer, adsb.lol)
@@ -50,6 +54,13 @@ weather APIs.
 Units are imperial (mi/ft, °F, mph) and the interface is set in a minimalist
 all-caps style, with measurement units left in natural case.
 
+Every marker is a purpose-drawn icon: aircraft and ships are silhouettes
+rotated to their heading/course, and hazards carry type-specific glyphs
+(fire, volcano, cyclone, flood, launch, antenna, camera…). The map itself is
+chrome-free — no on-map control widgets — with zoom by scroll/pinch, recenter
+via ⌖ ME, and attribution in the panel footer. The two side panels and the
+SITREP bar are all anchored to the bottom edge.
+
 ## Live map layers
 
 | Group | Layer | Source | Refresh |
@@ -61,7 +72,10 @@ all-caps style, with measurement units left in natural case.
 | | ISS live position | wheretheiss.at | 15 s |
 | | Bright satellites + GPS constellation | CelesTrak TLE → SGP4 propagated in-browser | 60–120 s |
 | | Amtrak trains | amtraker v3 | 60 s |
-| | Ships / AIS | Digitraffic (Baltic, keyless) | 60 s |
+| | Ships / AIS (hull icon, heading-aligned) | Digitraffic (Baltic, keyless) | 60 s |
+| | Starlink constellation (sampled) | CelesTrak TLE → SGP4 | 2 min |
+| Geopolitics | Internet outages (by country) | IODA / Georgia Tech | 30 min |
+| | Live cameras (curated public 24/7) | click-to-open | static |
 | Hazard | Natural events — wildfires, storms, volcanoes, ice | NASA EONET v3 | 10 min |
 | | Global disasters — quakes/cyclones/floods (alert-graded) | GDACS (UN/EC) | 30 min |
 | | Rocket launches (upcoming, at the pad) | Launch Library 2 | 60 min |
