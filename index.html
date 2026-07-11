@@ -454,9 +454,6 @@ const acPopup=p=>`<h4>${p.mil?'🎖':'✈'} ${escapeHtml(p.flight)}</h4>
   <div class="kv"><span>speed</span>${p.spd} kt${p.trk!=null?' · '+p.trk+'°':''}</div>
   <div class="kv"><span>squawk</span>${escapeHtml(p.sq||'—')}</div>
   <div class="kv"><span>hex</span>${escapeHtml(p.hex)}</div>`;
-// nearest feature (Point geometry) in a layer's current data to a lat/lon
-// map-area (viewport bounds) scoped variants — SITREP reflects only what's in view
-function inBounds(b,lon,lat){return lon>=b.getWest()&&lon<=b.getEast()&&lat>=b.getSouth()&&lat<=b.getNorth();}
 function featsIn(srcId){const s=gl.getSource(srcId);return s&&s._data?(s._data.features||[]):[];}
 // Bounds of the map area actually VISIBLE — i.e. left of the docked SITREP
 // panel on the right. gl.getBounds() spans the whole canvas including the strip
@@ -1333,29 +1330,28 @@ const CATS=[
    head:f=>cut(f.properties.name||'NPS LAND',20),
    sub:()=>'drones prohibited', detail:f=>cut(f.properties.utype||'NPS unit',18)},
 ];
-// is a point/polygon feature inside the given view bounds? For polygons: any
-// vertex in view, OR the polygon CONTAINS the view centre — without the second
-// test, zooming deep inside a large warning area made its card vanish exactly
-// when you were standing in it (all vertices off-screen).
-function featInBounds(f,b){
-  const g=f.geometry; if(!g) return false;
-  if(g.type==='Point') return inBounds(b,g.coordinates[0],g.coordinates[1]);
-  const rings=g.type==='Polygon'?g.coordinates:g.type==='MultiPolygon'?g.coordinates.flat():[];
-  if(rings.some(r=>r.some(pt=>inBounds(b,pt[0],pt[1])))) return true;
-  return pointInFeature(f,(b.getWest()+b.getEast())/2,(b.getSouth()+b.getNorth())/2);
-}
-// features of a category currently inside the map area
-function catItems(cfg,b){
+// features of a category within RANGE (rKm) of the crosshair — the SITREP lists
+// only what's inside the range ring, not the whole visible map. A point counts
+// when it's within the radius; a polygon (warning / airspace / park) counts when
+// the crosshair sits inside it OR any of its vertices falls within the radius.
+function catItems(cfg,lat,lon,rKm){
   let items=featsIn(cfg.src); if(cfg.filter) items=items.filter(cfg.filter);
-  return items.filter(f=>featInBounds(f,b));
+  return items.filter(f=>{
+    const g=f.geometry; if(!g) return false;
+    if(g.type==='Point') return havKm(lat,lon,g.coordinates[1],g.coordinates[0])<=rKm;
+    if(pointInFeature(f,lon,lat)) return true;
+    const rings=g.type==='Polygon'?g.coordinates:g.type==='MultiPolygon'?g.coordinates.flat():[];
+    return rings.some(r=>r.some(pt=>havKm(lat,lon,pt[1],pt[0])<=rKm));
+  });
 }
 
 let sitrepGen=0;
 async function sitrepTick(){
-  // SITREP reflects the CURRENT MAP AREA (viewport bounds), not just the user.
+  // SITREP reflects what's inside the RANGE RING (RNG.mi around the crosshair),
+  // not the whole visible map — the same radius the flyability check sweeps.
   const myGen=++sitrepGen;
-  const c=gl.getCenter(), b=viewBounds();   // only the area visible between the panels
-  const lat=c.lat, lon=c.lng;
+  const c=gl.getCenter();
+  const lat=c.lat, lon=c.lng, rangeKm=RNG.mi*MI_TO_KM;
   const rows=[];
   // Every row is 3 lines (l1/l2/l3). The WHOLE card is the click target — the
   // action (fly-to / open) rides as data-* on the row, so tapping anywhere on a
@@ -1435,14 +1431,26 @@ async function sitrepTick(){
   //    amber hazards, everything else — distance sorts WITHIN each tier.
   //    Capped so a busy area can't flood it. --
   const items=[];
-  CATS.forEach(cfg=>catItems(cfg,b).forEach(f=>{
-    const pt=polyPt(f); if(!pt) return;
+  CATS.forEach(cfg=>catItems(cfg,lat,lon,rangeKm).forEach(f=>{
+    const g=f.geometry; if(!g) return;
     const cls=cfg.cls?cfg.cls(f):'';
     const tier=cfg.hazard?(cls==='danger'?0:1):2;
-    // an area you're standing INSIDE sorts to the top (distance 0) and reads
-    // "overhead" instead of a distance to some far corner of its polygon
-    const inside=f.geometry&&f.geometry.type!=='Point'&&pointInFeature(f,lon,lat);
-    items.push({cfg,f,pt,cls,tier,inside,km:inside?0:havKm(lat,lon,pt[1],pt[0])});
+    // distance / bearing to the NEAREST point of the feature (its nearest vertex
+    // for a polygon), matching the range filter — so a big TFR whose edge reaches
+    // you reads as close, not as the distance to some far corner. An area you're
+    // standing INSIDE sorts to the top (0) and reads "overhead".
+    const inside=g.type!=='Point'&&pointInFeature(f,lon,lat);
+    let pt, km;
+    if(g.type==='Point'){ pt=g.coordinates; km=havKm(lat,lon,pt[1],pt[0]); }
+    else if(inside){ pt=polyPt(f); km=0; }
+    else {
+      const rings=g.type==='Polygon'?g.coordinates:g.type==='MultiPolygon'?g.coordinates.flat():[];
+      let bd=Infinity;
+      rings.forEach(r=>r.forEach(p=>{ const d=havKm(lat,lon,p[1],p[0]); if(d<bd){ bd=d; pt=p; } }));
+      km=bd;
+    }
+    if(!pt) return;
+    items.push({cfg,f,pt,cls,tier,inside,km});
   }));
   items.sort((a,z)=>a.tier-z.tier||a.km-z.km);
   const ITEM_CAP=14;
@@ -1465,7 +1473,7 @@ async function sitrepTick(){
   cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5]));
 
   $('#sit-body').innerHTML=rows.length?rows.join(''):
-    '<div class="sit-empty">NO SIGNALS IN THIS AREA — PAN OR ZOOM THE MAP</div>';
+    '<div class="sit-empty">NO SIGNALS IN RANGE — WIDEN THE RANGE OR MOVE THE CROSSHAIR</div>';
 }
 
 // action handler for a clicked SITREP card: fly to a point, or open a source page
