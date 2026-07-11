@@ -259,7 +259,7 @@
   </div>
   <div id="emg">
     <div id="emg-top">
-      <button id="emg-toggle" title="play / pause">▶</button>
+      <button id="emg-toggle" title="play / pause" aria-label="play"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.52.85l10.5-6.5a1 1 0 0 0 0-1.7L9.52 4.65A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg></button>
       <div id="emg-meta">
         <div id="emg-label">NOAA weather radio</div>
         <div id="emg-name">— locating nearest station —</div>
@@ -271,7 +271,7 @@
 </div>
 
 <!-- center-on-me: floating control, bottom-right of the map -->
-<button id="loc-btn" title="center map on my location">⌖</button>
+<button id="loc-btn" title="center map on my location" aria-label="center on my location"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 1.5v3.4M12 19.1v3.4M1.5 12h3.4M19.1 12h3.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
 
 <!-- mobile bottom navigation -->
 <div id="mnav">
@@ -598,7 +598,7 @@ defLayer({
 });
 
 defLayer({
-  id:'sos', label:'Emergency squawks', color:'#ff4455', group:'air', refresh:60, defaultOff:true, bg:true,
+  id:'sos', label:'Emergency squawks', color:'#ff4455', group:'air', refresh:60, bg:true,
   icon:'ac-sos', rotate:true, iconSize:0.6,
   loader: async ()=>{
     // 7700 = general emergency, 7600 = radio failure, 7500 = unlawful interference
@@ -677,7 +677,7 @@ defLayer({
 });
 
 defLayer({
-  id:'amtrak', label:'Amtrak trains', color:'#ffce4d', group:'surface', refresh:60, defaultOff:true, icon:'veh-train', iconSize:0.6,
+  id:'amtrak', label:'Amtrak trains', color:'#ffce4d', group:'surface', refresh:60, icon:'veh-train', iconSize:0.6,
   loader: async ()=>{
     const j=await getJSON('https://api-v3.amtraker.com/v3/trains');
     const feats=[];
@@ -718,7 +718,7 @@ function tleToFC(txt){
 
 /* ---------------- Hazard / Environment ---------------- */
 defLayer({
-  id:'eonet', label:'Natural events (NASA)', color:'#ff8a3d', group:'hazard', refresh:600, colored:true, defaultOff:true, bg:true,
+  id:'eonet', label:'Natural events (NASA)', color:'#ff8a3d', group:'hazard', refresh:600, colored:true, bg:true,
   icon:'ico-fire', iconProp:true, iconSize:0.5,
   loader: async ()=>{
     // NASA EONET v3 — live wildfires, severe storms, volcanoes, ice…  ACAO:*
@@ -753,7 +753,7 @@ defLayer({
 
 
 defLayer({
-  id:'volcano', label:'Holocene volcanoes', color:'#ff8a5c', group:'hazard', refresh:0, defaultOff:true, icon:'ico-volcano', iconSize:0.44,
+  id:'volcano', label:'Holocene volcanoes', color:'#ff8a5c', group:'hazard', refresh:0, icon:'ico-volcano', iconSize:0.44,
   // Smithsonian GVP's web service is 403/CORS-blocked in browsers, so per the
   // spec's "(static)" tag this is a curated Holocene subset — keyless, no fetch.
   loader: async ()=>({type:'FeatureCollection',features:VOLCANOES.map(v=>({
@@ -765,7 +765,7 @@ defLayer({
 });
 
 defLayer({
-  id:'gdacs', label:'Global disasters', color:'#ff6a3d', group:'hazard', refresh:1800, colored:true, defaultOff:true, bg:true,
+  id:'gdacs', label:'Global disasters', color:'#ff6a3d', group:'hazard', refresh:1800, colored:true, bg:true,
   // GDACS — UN/EC global disaster alerts: quakes, cyclones, floods, volcanoes,
   // droughts, wildfires; colour = alert level (green/orange/red). Keyless, CORS *.
   loader: async ()=>{
@@ -815,7 +815,7 @@ defLayer({
   // seismicity from EMSC — dots SIZED by magnitude and COLOURED by recency,
   // so a big fresh quake reads instantly. bg-loaded for SITREP anomalies.
   id:'emsc', label:'Earthquakes (live)', color:'#ff8a5c', group:'hazard', refresh:120,
-  defaultOff:true, bg:true, sized:true, colored:true,
+  bg:true, sized:true, colored:true,
   loader: async ()=>{
     const j=await getJSON('https://www.seismicportal.eu/fdsnws/event/1/query?limit=1000&format=json&minmag=2',{timeout:15000});
     const now=Date.now();
@@ -836,7 +836,7 @@ defLayer({
 });
 
 defLayer({
-  id:'water', label:'River / flood gauges', color:'#38d0ff', group:'hazard', refresh:600, defaultOff:true, icon:'ico-water', iconSize:0.42,
+  id:'water', label:'River / flood gauges', color:'#38d0ff', group:'hazard', refresh:600, icon:'ico-water', iconSize:0.42,
   // USGS live stream gauges in the current view (gauge height, ft)
   loader: async ()=>{
     const b=gl.getBounds();
@@ -865,7 +865,7 @@ defLayer({
   // is the global multi-hazard half). Keyless, CORS *. Polygons where present
   // (tornado / severe-thunderstorm / flash-flood / red-flag warnings carry them).
   id:'nws', label:'NWS warnings (US)', color:'#ff4455', group:'hazard', refresh:120,
-  defaultOff:true, bg:true, geom:'fill', colored:true,
+  bg:true, geom:'fill', colored:true,
   loader: async ()=>{
     const j=await getJSON('https://api.weather.gov/alerts/active',{timeout:20000});
     const feats=[];
@@ -1303,7 +1303,17 @@ function geocodeNWR(name){
 let emgPool=null;         // NWR station pool (fetched once, cached when non-empty)
 let emgPoolPromise=null;  // shared in-flight fetch so concurrent callers wait as one
 let emgCur=null;          // stationuuid currently tuned
-let emgPaused=false;      // user intent from the ▶/⏸ button
+// Starts PAUSED: the nearest station is tuned in the background but nothing
+// plays until the user hits ▶ (no surprise autoplay on load).
+let emgPaused=true;       // user intent from the play/pause button
+// crisp centred play / pause glyphs (SVG, not emoji) for the toggle button
+const ICON_PLAY='<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.52.85l10.5-6.5a1 1 0 0 0 0-1.7L9.52 4.65A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>';
+const ICON_PAUSE='<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></svg>';
+function setEmgIcon(playing){
+  const b=$('#emg-toggle');
+  b.innerHTML=playing?ICON_PAUSE:ICON_PLAY;
+  b.setAttribute('aria-label',playing?'pause':'play');
+}
 
 async function rbGet(path){
   let err;
@@ -1361,11 +1371,11 @@ function updateEmgLabel(best){
 }
 function playEmergency(s){
   audio.src=s.url;
-  if(!emgPaused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); $('#emg-toggle').textContent='⏸'; }
+  if(!emgPaused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); setEmgIcon(true); }
 }
-// ▶/⏸ play-pause control
+// play / pause control
 function setEmgPaused(p){
-  emgPaused=p; $('#emg-toggle').textContent=p?'▶':'⏸';
+  emgPaused=p; setEmgIcon(!p);
   if(p){ try{audio.pause();}catch(e){} }
   else { const q=audio.play(); if(q&&q.catch) q.catch(()=>{}); }
 }
@@ -1387,10 +1397,12 @@ audio.addEventListener('error',()=>{
     if(!emgPaused&&emgCur&&audio.paused){ const p=audio.play(); if(p&&p.catch) p.catch(()=>{}); }
   },{passive:true}));
 
-// Viewport-scoped feeds refetch for the new area on every map move: aircraft
-// (in-view tiling) and the US flood gauges (USGS bbox cap).
+// Viewport-scoped feeds refetch for the new area whenever the visible bounds
+// change — on every map move AND on every container resize. A resize (window,
+// panel, orientation, sheet) enlarges the view without a pan, so without this
+// the newly-revealed area kept its stale aircraft until the next 60s refresh.
 let moveDebounce=null, lastGeoC=null;
-gl.on('moveend',()=>{
+function refreshViewport(withLabel){
   clearTimeout(moveDebounce);
   moveDebounce=setTimeout(()=>{
     ['nearair','water'].forEach(id=>{
@@ -1398,9 +1410,12 @@ gl.on('moveend',()=>{
       if(st&&st.on&&st.started) runLayer(LAYERS.find(l=>l.id===id));
     });
     sitrepTick();
-    updateAreaLabel();
+    if(withLabel) updateAreaLabel();
   },500);
-});
+}
+gl.on('moveend',()=>refreshViewport(true));
+// container resize doesn't reliably fire moveend, so refetch here too
+gl.on('resize',()=>refreshViewport(false));
 // the location chip follows the MAP CENTRE (reverse-geocoded), so panning
 // updates both the label and the SITREP for wherever you're looking
 async function updateAreaLabel(){
