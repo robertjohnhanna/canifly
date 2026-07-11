@@ -80,9 +80,7 @@ SITREP bar are all anchored to the bottom edge.
 | | ISS live position | wheretheiss.at | 15 s |
 | | Bright satellites + GPS constellation | CelesTrak TLE → SGP4 propagated in-browser | 60–120 s |
 | | Amtrak trains | amtraker v3 | 60 s |
-| | Ships / AIS (hull icon, heading-aligned) | Digitraffic (Baltic, keyless) | 60 s |
 | | Starlink constellation (sampled) | CelesTrak TLE → SGP4 | 2 min |
-| Geopolitics | Internet outages (by country) | IODA / Georgia Tech | 30 min |
 | | Live cameras (curated public 24/7) | click-to-open | static |
 | Hazard | Natural events — wildfires, storms, volcanoes, ice | NASA EONET v3 | 10 min |
 | | Global disasters — quakes/cyclones/floods (alert-graded) | GDACS (UN/EC) | 30 min |
@@ -95,8 +93,6 @@ SITREP bar are all anchored to the bottom edge.
 | | Aurora forecast (≥40 % probability) | NOAA SWPC OVATION | 5 min |
 | | Holocene volcanoes | Smithsonian GVP (curated static) | — |
 | Geopolitics | Ukraine frontline | DeepStateMap | 30 min |
-| | Conflict/protest events | GDELT 2.0 geo | 6 h |
-| | Malware C2 count | abuse.ch Feodo | 5 min |
 
 **Space-weather / cyber:** planetary Kp index, GOES X-ray flare class (NOAA
 SWPC) and the CISA KEV catalog size ride in the SITREP conditions row; a UTC

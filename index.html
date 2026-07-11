@@ -737,31 +737,6 @@ defLayer({
     <div class="kv"><span>meaning</span>${p.code==='7700'?'emergency':p.code==='7600'?'radio failure':'unlawful interference'}</div>`
 });
 
-defLayer({
-  id:'ships', label:'Ships / AIS', color:'#ffce4d', group:'surface', refresh:60, defaultOff:true,
-  icon:'ship', rotate:true, iconSize:0.5,
-  loader: async ()=>{
-    // Finnish Transport Agency open AIS (GeoJSON). Browsers auto-send gzip,
-    // which the API requires. Real live vessels; regional coverage.
-    const j=await getJSON('https://meri.digitraffic.fi/api/ais/v1/locations',{timeout:20000});
-    const NAV={0:'under way',1:'anchored',2:'not under command',3:'restricted',
-      5:'moored',7:'fishing',8:'sailing'};
-    return {type:'FeatureCollection',features:(j.features||[]).filter(f=>f.geometry).map(f=>{
-      const p=f.properties||{};
-      const hd=(p.heading!=null&&p.heading<360)?p.heading:(p.cog!=null?p.cog:0);
-      return {type:'Feature',geometry:f.geometry,
-        properties:{_kind:'ship',mmsi:p.mmsi,_rot:hd,
-          sog:p.sog!=null?p.sog+' kn':'—',cog:p.cog,
-          nav:NAV[p.navStat]||('status '+(p.navStat??'?')),
-          heading:p.heading}};
-    })};
-  },
-  popup:p=>`<h4>🚢 Vessel ${escapeHtml(String(p.mmsi))}</h4>
-    <div class="kv"><span>speed</span>${escapeHtml(p.sog)}</div>
-    <div class="kv"><span>course</span>${p.cog!=null?p.cog+'°':'—'}</div>
-    <div class="kv"><span>status</span>${escapeHtml(p.nav)}</div>
-    <div class="kv"><span>src</span>Digitraffic AIS · MMSI ${escapeHtml(String(p.mmsi))}</div>`
-});
 
 defLayer({
   id:'iss', label:'ISS (live)', color:'#ffffff', group:'space', refresh:15, defaultOff:true, icon:'ico-iss', iconSize:0.62,
@@ -1041,25 +1016,6 @@ defLayer({
     <div class="kv"><span>src</span>DeepStateMap (~30 min)</div>`
 });
 
-defLayer({
-  id:'gdelt', label:'Conflict events (GDELT)', color:'#c77dff', group:'conflict', refresh:21600, defaultOff:true, icon:'ico-conflict', iconSize:0.46,
-  loader: async ()=>{
-    const j=await getJSON('https://api.gdeltproject.org/api/v2/geo/geo?query='+
-      encodeURIComponent('(conflict OR military OR airstrike OR protest)')+
-      '&format=geojson&timespan=1d',{timeout:25000});
-    (j.features||[]).forEach(f=>{
-      const n=f.properties&&f.properties.count?+f.properties.count:1;
-      f.properties=f.properties||{};
-      f.properties._kind='gdelt';
-      f.properties._r=Math.min(12,3+Math.log2(1+n)*1.6);
-    });
-    return j;
-  },
-  popup:p=>`<h4>📰 ${escapeHtml(p.name||'location')}</h4>
-    <div class="kv"><span>mentions</span>${escapeHtml(String(p.count||'?'))} (24h)</div>
-    <div class="kv"><span>query</span>conflict/military/protest</div>
-    <div class="kv"><span>src</span>GDELT 2.0 geo</div>`
-});
 
 defLayer({
   id:'broadcast', label:'Broadcast stations', color:'#ff7ac2', group:'signals', refresh:0, defaultOff:true, icon:'ico-antenna', iconSize:0.42,
@@ -1086,27 +1042,6 @@ defLayer({
     <div class="lnk"><a href="#" onclick="playBroadcast(${JSON.stringify(p.url).replace(/"/g,'&quot;')},${JSON.stringify(p.name).replace(/"/g,'&quot;')});return false;">▶ play in-page</a></div>`
 });
 
-defLayer({
-  id:'outages', label:'Internet outages', color:'#ff4d6d', group:'conflict', refresh:1800, defaultOff:true, colored:true, bg:true, icon:'ico-outage', iconSize:0.46,
-  loader: async ()=>{
-    const now=Math.floor(Date.now()/1000), from=now-86400;
-    const j=await getJSON(`https://api.ioda.inetintel.cc.gatech.edu/v2/outages/summary?from=${from}&until=${now}&entityType=country&limit=60`,{timeout:20000});
-    const feats=[];
-    (j.data||[]).forEach(d=>{
-      const cc=d.entity&&d.entity.code, ctr=COUNTRY_CENTROID[cc]; if(!ctr) return;
-      const score=(d.scores&&d.scores.overall)||0;
-      feats.push({type:'Feature',geometry:{type:'Point',coordinates:[ctr[1],ctr[0]]},
-        properties:{_kind:'outage',_r:Math.min(16,6+Math.log10(1+score)),
-          _col:score>1e6?'#ff4d6d':score>1e5?'#ffb454':'#ffe08a',
-          name:d.entity.name,events:d.event_cnt||0,score:Math.round(score)}});
-    });
-    return {type:'FeatureCollection',features:feats};
-  },
-  popup:p=>`<h4>📡 INTERNET OUTAGE</h4>
-    <div class="kv"><span>country</span>${escapeHtml(p.name)}</div>
-    <div class="kv"><span>events</span>${p.events} (24h)</div>
-    <div class="kv"><span>src</span>IODA · Georgia Tech</div>`
-});
 
 defLayer({
   id:'cams', label:'Live cameras', color:'#38d0ff', group:'signals', refresh:0, defaultOff:true, bg:true, icon:'ico-cam', iconSize:0.5,
@@ -1133,36 +1068,7 @@ defLayer({
     <div class="lnk"><a target="_blank" rel="noopener" href="https://en.wikipedia.org/?curid=${p.pageid}">WIKIPEDIA ↗</a></div>`
 });
 
-defLayer({
-  id:'news', label:'Major news', color:'#ffd24d', group:'conflict', refresh:900, defaultOff:true, icon:'ico-news', iconSize:0.5,
-  loader: async ()=>{
-    const q=encodeURIComponent('(breaking OR crisis OR attack OR war OR strike OR election OR protest OR disaster OR summit)');
-    const j=await getJSON('https://api.gdeltproject.org/api/v2/doc/doc?query='+q+
-      '&mode=artlist&maxrecords=75&format=json&sort=datedesc&timespan=1d',{timeout:12000});
-    const seen={}, feats=[];
-    (j.articles||[]).forEach(a=>{
-      const iso=NAME2ISO[a.sourcecountry]; const ctr=iso&&COUNTRY_CENTROID[iso]; if(!ctr) return;
-      const k=iso, i=seen[k]=(seen[k]||0); seen[k]++;
-      const jx=((i%5)-2)*0.8, jy=(Math.floor(i/5)-2)*0.8; // spread stacked articles
-      feats.push({type:'Feature',geometry:{type:'Point',coordinates:[ctr[1]+jx,ctr[0]+jy]},
-        properties:{_kind:'news',title:a.title||'',url:a.url||'',src:a.domain||a.sourcecountry||''}});
-    });
-    return {type:'FeatureCollection',features:feats};
-  },
-  popup:p=>`<h4>📰 ${escapeHtml(String(p.title).slice(0,70))}</h4>
-    <div class="kv"><span>source</span>${escapeHtml(p.src)}</div>
-    <div class="lnk"><a href="${escapeHtml(p.url)}" target="_blank" rel="noopener">READ ARTICLE ↗</a></div>`
-});
 
-defLayer({
-  id:'malware', label:'Malware C2 count', color:'#9b5cff', group:'conflict', refresh:300, defaultOff:true, icon:'ico-malware', iconSize:0.46,
-  loader: async ()=>{
-    const j=await getJSON('https://feodotracker.abuse.ch/downloads/ipblocklist.json');
-    toast('abuse.ch Feodo: '+(Array.isArray(j)?j.length:0)+' active C2 IPs','warn');
-    return {type:'FeatureCollection',features:[]};
-  },
-  popup:()=>''
-});
 
 /* =====================================================================
    3. LAYER RUNTIME — sources, styles, toggles, refresh loop
@@ -1546,8 +1452,6 @@ async function sitrepTick(){
     anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',gRed.length+' red/orange in view'+(nr?' · '+fmtMi(nr.km):''),nr?flyBtn(nr.f):'']); }
   const bigQ=featsIn('src-quakes').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(+f.properties.mag)>=5).sort((x,y)=>y.properties.mag-x.properties.mag)[0];
   if(bigQ) anom.push(['danger','🌍','MAJOR EARTHQUAKE','M'+bigQ.properties.mag+' · '+escapeHtml(String(bigQ.properties.place||'').slice(0,42)),flyBtn(bigQ)]);
-  const oNear=nearView('src-outages',b,lat,lon);
-  if(oNear) anom.push(['alert','📡','INTERNET OUTAGE',escapeHtml(oNear.f.properties.name)+' · '+fmtMi(oNear.km),flyBtn(oNear.f)]);
   if(KP!=null&&KP>=5) anom.push(['alert','🧲','GEOMAGNETIC STORM','Kp '+KP+' — HF / GPS / grid impact possible','']);
   if(XRAY&&/^[MX]/.test(XRAY)) anom.push([/^X/.test(XRAY)?'danger':'alert','☀','SOLAR FLARE '+XRAY,'HF radio blackout risk','']);
   // title severity: 0 none · 1 alert (amber) · 2 warning (red)
@@ -1596,14 +1500,6 @@ async function sitrepTick(){
   if(milN){ const nm=nearView('src-mil',b,lat,lon);
     row('alert','🎖',milN+' MILITARY AIRCRAFT IN VIEW',
       nm?('closest '+escapeHtml(nm.f.properties.flight)+' · '+fmtMi(nm.km)):'', nm?flyBtn(nm.f):''); }
-  const shN=countView('src-ships',b);
-  if(shN){ const nsh=nearView('src-ships',b,lat,lon);
-    row('','🚢',shN+' VESSELS IN VIEW',
-      nsh?('nearest MMSI '+escapeHtml(String(nsh.f.properties.mmsi))+' · '+fmtMi(nsh.km)):'', nsh?flyBtn(nsh.f):''); }
-  const newsN=nearView('src-news',b,lat,lon);
-  if(newsN) row('','📰','NEWS · '+escapeHtml(String(newsN.f.properties.title||'').slice(0,44)),
-    escapeHtml(newsN.f.properties.src||'')+' · '+fmtMi(newsN.km),
-    `<button class="act" data-act="link" data-url="${escapeHtml(newsN.f.properties.url||'')}">READ</button>`);
   const nq=nearView('src-quakes',b,lat,lon);
   if(nq) row('','🌍','M'+nq.f.properties.mag+' EARTHQUAKE · '+fmtMi(nq.km),
     escapeHtml(String(nq.f.properties.place||''))+' · '+fmtTime(nq.f.properties.time),flyBtn(nq.f));
@@ -2248,8 +2144,8 @@ function initRadioPins(){
     type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
     properties:{_kind:'atc',name:a.name,icao:a.icao,page:a.page}}))};
 
-  const symLayout=img=>({'icon-image':img,'icon-size':iconSize(0.5),
-    'icon-allow-overlap':true,'icon-ignore-placement':true});
+  const symLayout=img=>({'icon-image':img,'icon-size':iconSize(0.5),'visibility':'none',
+    'icon-allow-overlap':true,'icon-ignore-placement':true}); // signal pins off by default
   gl.addSource('src-kiwi',{type:'geojson',data:kiwiFC});
   gl.addLayer({id:'ly-kiwi',type:'symbol',source:'src-kiwi',layout:symLayout('ico-radio')});
   gl.addSource('src-atc',{type:'geojson',data:atcFC});
@@ -2280,8 +2176,8 @@ function initRadioPins(){
   const g=$('#grp-signals');
   [['kiwi','KiwiSDR receivers','📻',KIWI_LIST.length],
    ['atc','LiveATC towers','🛬',LIVEATC.length]].forEach(([id,label,emj,n])=>{
-    const row=el('div','layer');
-    row.innerHTML=`<input type="checkbox" id="ck-${id}" checked>
+    const row=el('div','layer off');
+    row.innerHTML=`<input type="checkbox" id="ck-${id}">
       <span class="pic emj">${emj}</span>
       <label for="ck-${id}">${label}</label><span class="cnt" id="cnt-${id}">${n}</span>`;
     g.appendChild(row);
@@ -2352,41 +2248,6 @@ gl.on('dragstart',()=>{ if(window.matchMedia('(max-width:900px)').matches) openS
 /* =====================================================================
    12. STATIC DATA — curated, keyless (no fetch)
    ===================================================================== */
-// approximate country centroids (ISO-2 -> [lat,lon]) for plotting IODA outages
-const COUNTRY_CENTROID={US:[39.8,-98.6],CA:[56.1,-106.3],MX:[23.6,-102.5],BR:[-14.2,-51.9],
-AR:[-38.4,-63.6],CL:[-35.7,-71.5],CO:[4.6,-74.3],PE:[-9.2,-75.0],VE:[6.4,-66.6],EC:[-1.8,-78.2],
-BO:[-16.3,-63.6],GB:[54.0,-2.0],IE:[53.4,-8.2],FR:[46.6,2.2],ES:[40.0,-3.7],PT:[39.6,-8.0],
-DE:[51.2,10.4],IT:[41.9,12.6],NL:[52.1,5.3],BE:[50.6,4.7],CH:[46.8,8.2],AT:[47.6,14.1],
-PL:[51.9,19.1],CZ:[49.8,15.5],SE:[60.1,18.6],NO:[60.5,8.5],FI:[64.0,26.0],DK:[56.0,9.5],
-GR:[39.1,21.8],RO:[45.9,24.9],UA:[48.4,31.2],RU:[61.5,105.3],TR:[38.9,35.2],EG:[26.8,30.8],
-SA:[23.9,45.1],IR:[32.4,53.7],IQ:[33.2,43.7],SY:[34.8,38.9],IL:[31.0,34.8],JO:[30.6,36.2],
-AE:[23.4,53.8],YE:[15.6,48.5],PK:[30.4,69.3],IN:[22.4,79.0],BD:[23.7,90.4],LK:[7.9,80.8],
-CN:[35.9,104.2],JP:[36.2,138.3],KR:[36.5,127.9],KP:[40.3,127.5],TW:[23.7,121.0],TH:[15.1,101.0],
-VN:[14.1,108.3],MM:[21.9,95.9],KH:[12.6,104.9],LA:[19.9,102.5],MY:[4.2,101.9],ID:[-2.5,118.0],
-PH:[12.9,121.8],SG:[1.35,103.8],AU:[-25.3,133.8],NZ:[-41.8,174.0],ZA:[-30.6,22.9],NG:[9.1,8.7],
-KE:[0.0,37.9],ET:[9.1,40.5],TZ:[-6.4,34.9],UG:[1.4,32.3],GH:[7.9,-1.0],DZ:[28.0,1.7],
-MA:[31.8,-7.1],TN:[33.9,9.6],LY:[26.3,17.2],SD:[12.9,30.2],SO:[5.2,46.2],CD:[-4.0,21.8],
-AO:[-11.2,17.9],MZ:[-18.7,35.5],ZW:[-19.0,29.9],ZM:[-13.1,27.8],AF:[33.9,67.7],KZ:[48.0,66.9],
-UZ:[41.4,64.6],AZ:[40.1,47.6],GE:[42.3,43.4],AM:[40.1,45.0],BY:[53.7,28.0],LT:[55.2,23.9],
-LV:[56.9,24.6],EE:[58.6,25.0],RS:[44.0,21.0],HR:[45.1,15.2],BG:[42.7,25.5],HU:[47.2,19.5],
-SK:[48.7,19.7],QA:[25.3,51.2],KW:[29.3,47.5],OM:[21.5,55.9],LB:[33.9,35.9],NP:[28.4,84.1],
-MN:[46.9,103.8],CU:[21.5,-77.8],DO:[18.7,-70.2],GT:[15.8,-90.2],HN:[15.2,-86.2],NI:[12.9,-85.2],
-CR:[9.7,-83.8],PA:[8.5,-80.8],PY:[-23.4,-58.4],UY:[-32.5,-55.8],SN:[14.5,-14.4],CI:[7.5,-5.5],
-CM:[7.4,12.4],FR:[46.6,2.2]};
-// GDELT sourcecountry (name) -> ISO-2, for placing news at a country centroid
-const NAME2ISO={'United States':'US','United Kingdom':'GB','Canada':'CA','Australia':'AU',
-'India':'IN','China':'CN','Japan':'JP','Germany':'DE','France':'FR','Italy':'IT','Spain':'ES',
-'Russia':'RU','Ukraine':'UA','Brazil':'BR','Mexico':'MX','Argentina':'AR','South Africa':'ZA',
-'Nigeria':'NG','Kenya':'KE','Egypt':'EG','Israel':'IL','Iran':'IR','Iraq':'IQ','Turkey':'TR',
-'Saudi Arabia':'SA','Pakistan':'PK','Bangladesh':'BD','Indonesia':'ID','Philippines':'PH',
-'Vietnam':'VN','Thailand':'TH','Malaysia':'MY','Singapore':'SG','South Korea':'KR',
-'North Korea':'KP','Taiwan':'TW','Netherlands':'NL','Belgium':'BE','Switzerland':'CH',
-'Sweden':'SE','Norway':'NO','Denmark':'DK','Finland':'FI','Poland':'PL','Greece':'GR',
-'Ireland':'IE','Portugal':'PT','Austria':'AT','Czech Republic':'CZ','Romania':'RO',
-'Hungary':'HU','New Zealand':'NZ','Chile':'CL','Colombia':'CO','Peru':'PE','Venezuela':'VE',
-'Afghanistan':'AF','Syria':'SY','Yemen':'YE','Lebanon':'LB','Jordan':'JO','Qatar':'QA',
-'United Arab Emirates':'AE','Kuwait':'KW','Ethiopia':'ET','Ghana':'GH','Morocco':'MA',
-'Algeria':'DZ','Sudan':'SD','Kazakhstan':'KZ','Azerbaijan':'AZ','Georgia':'GE','Cuba':'CU'};
 // [name, lat, lon, live-stream URL] — curated public 24/7 cameras
 const CAMS=[
   ['Times Square, NYC',40.757,-73.986,'https://www.earthcam.com/usa/newyork/timessquare/?cam=tsrobo1'],
