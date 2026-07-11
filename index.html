@@ -1220,11 +1220,15 @@ async function loadXray(){
   scheduleSitrep();
 }
 // WORLD NEWS — Wikipedia "Current events" portal, keyless + CORS-*. We pull the
-// daily page's wikitext and keep ONLY the "Armed conflicts and attacks" and
-// "Disasters and accidents" sections (editor-categorised, so no sports/culture
-// keyword-guessing). No map layer — it just feeds a WORLD section in the SITREP.
+// daily page's wikitext and keep only the editor-categorised sections we care
+// about (no sports/culture keyword-guessing). No map layer — it feeds a WORLD
+// section in the SITREP. Each section has an icon; NEWS_ORDER is the priority.
 const NEWS_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
-const NEWS_SECTIONS={'Armed conflicts and attacks':'⚔️','Disasters and accidents':'🌊'};
+const NEWS_SECTIONS={
+  'Armed conflicts and attacks':'⚔️','Disasters and accidents':'🌊',
+  'International relations':'🤝','Politics and elections':'🗳️',
+  'Law and crime':'⚖️','Science and technology':'🔬'};
+const NEWS_ORDER=['⚔️','🌊','🤝','🗳️','⚖️','🔬']; // display + priority order
 let WORLD_NEWS=[]; // [{text,url,icon}]
 function parseCurrentEvents(wt){
   const m=wt.match(/\|\s*content\s*=([\s\S]*)/);
@@ -1258,11 +1262,11 @@ async function loadWorldNews(){
       if(!wt) continue;
       const items=parseCurrentEvents(wt);
       if(items.length){
-        // balance the two categories so disasters aren't crowded out by a
-        // conflict-heavy day (up to 4 each, conflicts first)
-        const war=items.filter(x=>x.icon==='⚔️').slice(0,4);
-        const dis=items.filter(x=>x.icon==='🌊').slice(0,4);
-        WORLD_NEWS=war.concat(dis);
+        // balance across categories (up to 3 each, in priority order) so no
+        // single busy section crowds the others out; cap the total
+        const out=[];
+        NEWS_ORDER.forEach(ic=>out.push(...items.filter(x=>x.icon===ic).slice(0,3)));
+        WORLD_NEWS=out.slice(0,14);
         return;
       }
     }catch(e){}
