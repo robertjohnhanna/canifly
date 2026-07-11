@@ -24,9 +24,9 @@
      no iframe), both driven by the map-centre crosshair.
 
      Map layers (all keyless, CORS-*): live aircraft (adsb), NWS
-     warnings, NEXRAD radar (Iowa State Mesonet), FAA controlled
-     airspace (Class B/C/D rings around airports), plus a dashed range
-     ring at the crosshair matching the canifly RANGE setting. SITREP-only
+     warnings, NEXRAD radar (Iowa State Mesonet), FAA airspace (Class
+     B/C/D rings around airports + national-defense no-fly zones), plus a
+     dashed range ring at the crosshair matching the canifly RANGE setting. SITREP-only
      feeds: SPC Day-1 outlook, NOAA SWPC space weather (Kp / GOES X-ray).
      All sources are keyless with ACAO:* so fetch works cross-origin;
      anything requiring a key is excluded by the keyless rule.
@@ -94,7 +94,7 @@
      a SIZE CONTAINER, so every font and pad below is in cq units and the chart
      scales itself to whatever box it gets — desktop dock, iPad, iPhone sheet. */
   #fly-pane{flex:0 0 50%;min-height:0;border-top:1px solid var(--line);background:#000;
-    container-type:size;--fti:min(2.4cqh,3.3cqw);
+    container-type:size;--fti:min(2.4cqh,3.3cqw,14px);
     /* a bottom-anchored column: the chart (flip box) then the settings box, both
        hugging the foot of the panel; any slack falls as blank space ABOVE the
        chart, between it and the SITREP cards */
@@ -110,10 +110,10 @@
     align-content:center;font-variant-numeric:tabular-nums}
   #fly-pane .grow{display:contents}
   #fly-pane .ga,#fly-pane .gc{display:flex;align-items:center;min-width:0;white-space:nowrap;
-    padding:min(1.3cqh,2cqw) min(.6cqh,.9cqw);line-height:1}
+    padding:min(1.3cqh,2cqw,11px) min(.6cqh,.9cqw,6px);line-height:1}
   #fly-pane .ga{justify-content:flex-start;color:var(--ink);letter-spacing:.03em;
-    font-size:min(2.6cqh,3.6cqw)}
-  #fly-pane .gc{justify-content:center;font-weight:700;font-size:min(3.5cqh,4.6cqw);
+    font-size:min(2.6cqh,3.6cqw,15px)}
+  #fly-pane .gc{justify-content:center;font-weight:700;font-size:min(3.5cqh,4.6cqw,21px);
     color:var(--ink);border-left:1px solid #16212b}   /* faint rule between time columns */
   /* reference-unit tags (FT on the 400 label, MPH on the gust row's last cell) */
   #fly-pane .gu{font-size:.58em;font-weight:600;color:inherit;letter-spacing:.02em;margin-left:.18em}
@@ -123,17 +123,17 @@
   #fly-pane .ga.bad{color:var(--danger)}
   #fly-pane .ghead .gc.bad{background:none;color:var(--danger)}
   #fly-pane .ghead .ga,#fly-pane .ghead .gc{border-bottom:1px solid var(--line);
-    padding-bottom:min(.8cqh,1.2cqw);font-weight:500;font-size:min(2.6cqh,3.6cqw);color:var(--ink)}
+    padding-bottom:min(.8cqh,1.2cqw);font-weight:500;font-size:min(2.6cqh,3.6cqw,15px);color:var(--ink)}
   #fly-pane .ghead .gc{border-left:0}
   #fly-pane .ghead .gc.now{font-weight:700}
   #fly-pane .ga.hi{font-weight:700}
   #fly-pane .ggust .ga,#fly-pane .ggust .gc{border-top:1px solid rgba(116,133,150,.4)}
   /* a cap/gate code cell (GUST/VIS/SKY/WIND/FAA/TRFC/PCPN/KPx) */
-  #fly-pane .gc.rsn{font-size:min(2.5cqh,3.4cqw);font-weight:800;letter-spacing:.03em}
+  #fly-pane .gc.rsn{font-size:min(2.5cqh,3.4cqw,15px);font-weight:800;letter-spacing:.03em}
   /* loading shimmer — exactly one cell-text line tall, so nothing shifts on load */
   @keyframes flypulse{0%,100%{opacity:1}50%{opacity:.2}}
   #fly-pane .sk{display:block;border-radius:4px;background:var(--ink-dim);opacity:.22;
-    width:58%;height:min(3.5cqh,4.6cqw);margin:0 auto;animation:flypulse 1.6s ease-in-out infinite}
+    width:58%;height:min(3.5cqh,4.6cqw,21px);margin:0 auto;animation:flypulse 1.6s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){#fly-pane .sk{animation:none}}
   /* the flip info card: the gate/cap codes and the data sources (the settings
      now live in their own box below the chart, not on this flip face) */
@@ -157,7 +157,7 @@
      box read as one system. */
   #fly-settings{width:100%;max-width:560px;flex:0 0 auto;
     border:1px solid var(--line);border-radius:12px;background:#000;
-    padding:min(1.6cqh,10px) min(2.6cqh,4cqw)}
+    padding:min(1.6cqh,10px) min(2.6cqh,4cqw,16px)}
   #fly-pane .irow.iset{align-items:center;gap:0}
   #fly-pane .iset+.iset{margin-top:min(.9cqh,1.4cqw)}
   #fly-pane .iset .isl{flex:1 1 0;text-align:left;font-weight:800;color:var(--ink);
@@ -283,20 +283,21 @@
       backdrop-filter:none;-webkit-backdrop-filter:none;
       border-radius:0;border:none;visibility:hidden;
       transform:translateY(100%);
-      /* CLOSING is instant — no slide back down to the map. (Opening keeps the
-         slide-up via .panel.open below; a class change reads the target state's
-         transition, so only open animates.) */
-      transition:transform 0s,visibility 0s;
+      /* No animation either way — the sheet just appears / disappears. */
+      transition:none;
       box-shadow:0 -12px 40px #000a}
-    .panel.open{transform:translateY(0);visibility:visible;
-      transition:transform .28s cubic-bezier(.32,.72,.35,1),visibility 0s}
+    .panel.open{transform:translateY(0);visibility:visible}
     .maplibregl-ctrl-bottom-right{bottom:calc(var(--navh) + 4px + var(--sa-b))}
     /* map is full-width on mobile; keep the button above the bottom nav */
     #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(var(--navh) + var(--sa-b) + 14px)}
-    /* canifly chart on the phone/iPad sheet: a fixed tall pane (the cards scroll
-       above it). The cq-unit sizing inside then fits the grid to whatever this
-       resolves to — comfortably big on an iPhone, roomier still on an iPad. */
-    #fly-pane{flex:0 0 auto;height:clamp(340px,56vh,620px)}
+    /* canifly chart on the phone/iPad sheet: the pane sizes to its CONTENT
+       (chart + settings) and sits at the foot of the sheet, so the SITREP cards
+       fill every pixel above it — right down to the chart, no dead band. Turning
+       off the size container here makes the grid's cq units fall back to the
+       viewport (svh/svw) instead of the pane height, so the chart has a
+       deterministic size that doesn't depend on the pane it's sizing. The px
+       caps in the grid rules keep the cells from ballooning on a wide iPad. */
+    #fly-pane{flex:0 0 auto;height:auto;container-type:normal}
   }
 </style>
 </head>
@@ -716,27 +717,35 @@ defLayer({
 });
 
 defLayer({
-  // FAA CONTROLLED AIRSPACE around airports — the Class B / C / D (and surface
-  // Class E2) zones that gate low drone flight. Class C and D are literally
-  // radius rings around a field; Class B is the stacked "wedding cake" over a
-  // major hub. Drawn LIGHTLY as background context (faint fill + thin outline)
-  // in aeronautical colours: blue for B/D, magenta for C/E2. Keyless FAA ArcGIS
-  // (Class_Airspace), CORS *. Viewport-scoped and zoom-gated so a wide view
-  // doesn't pull the whole country. Sunk beneath the aircraft at boot.
-  id:'airspace', label:'FAA controlled airspace', color:'#5b8def', group:'air', refresh:900,
+  // FAA AIRSPACE overlay — the zones that gate low drone flight, drawn LIGHTLY
+  // as background context (faint fill + thin outline). Two feeds, both keyless
+  // FAA ArcGIS (CORS *), the SAME two the canifly FAA cap queries:
+  //   • Class_Airspace — controlled airspace around airports: Class B / C / D
+  //     (and surface Class E2). C and D are literally radius rings around a
+  //     field, B the stacked "wedding cake" over a hub. Aeronautical colours:
+  //     blue for B/D, magenta for C/E2.
+  //   • National_Defense_Airspace_TFR_Areas — the standing national-defense
+  //     no-fly zones (a zone in range forces the canifly ceiling to 0). Drawn
+  //     in red so they read as "avoid", but still light.
+  // Viewport-scoped and zoom-gated so a wide view doesn't pull the country.
+  // This is a VISUAL layer only — the canifly gate still runs its own strict
+  // point-buffer query, so a soft-failing overlay never understates a no-fly.
+  id:'airspace', label:'FAA airspace (controlled + defense)', color:'#5b8def', group:'air', refresh:900,
   viewport:true, geom:'fill', colored:true, fillOpacity:0.05,
   lineWidth:1, lineOpacity:0.34,
   loader: async ()=>{
     if(gl.getZoom()<7) return {type:'FeatureCollection',features:[]};   // too wide → skip
     const b=viewBounds();
     const env=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(3)).join(',');
-    const url='https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/Class_Airspace/FeatureServer/0/query'
+    const q=svc=>`https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/${svc}/FeatureServer/0/query`
       +`?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326`
-      +'&spatialRel=esriSpatialRelIntersects&outFields=NAME,CLASS,LOCAL_TYPE&returnGeometry=true&f=geojson';
-    const j=await getJSON(url,{timeout:15000});
+      +'&spatialRel=esriSpatialRelIntersects&returnGeometry=true&f=geojson';
+    const [cls,def]=await Promise.all([
+      getJSON(q('Class_Airspace')+'&outFields=NAME,CLASS,LOCAL_TYPE',{timeout:15000}).catch(()=>null),
+      getJSON(q('National_Defense_Airspace_TFR_Areas')+'&outFields=NAME',{timeout:15000}).catch(()=>null)]);
     const COL={B:'#5b8def',C:'#c06ad0',D:'#5b8def'};
     const feats=[];
-    (j.features||[]).forEach(f=>{
+    ((cls&&cls.features)||[]).forEach(f=>{
       const p=f.properties||{}, cl=p.CLASS;
       // airport controlled airspace only: B/C/D + the surface Class E (E2) that
       // caps a non-towered field — skip Class A (all of CONUS) and the big E
@@ -746,11 +755,20 @@ defLayer({
       feats.push({type:'Feature',geometry:f.geometry,properties:{_kind:'airspace',
         cls:cl,name:p.NAME||'',_col:COL[cl]||'#c06ad0'}});
     });
+    ((def&&def.features)||[]).forEach(f=>{
+      if(!f.geometry) return;
+      feats.push({type:'Feature',geometry:f.geometry,properties:{_kind:'airspace',
+        cls:'DEF',name:(f.properties&&f.properties.NAME)||'',_col:'#ff5a3c'}});
+    });
     return {type:'FeatureCollection',features:feats};
   },
-  popup:p=>`<h4>▢ CLASS ${escapeHtml(p.cls||'E')} AIRSPACE</h4>
-    <div class="kv"><span>name</span>${escapeHtml(String(p.name).slice(0,60)||'—')}</div>
-    <div class="kv"><span>src</span>FAA · controlled airspace</div>`
+  popup:p=>p.cls==='DEF'
+    ? `<h4 style="color:var(--danger)">⛔ NATIONAL DEFENSE AIRSPACE</h4>
+       <div class="kv"><span>name</span>${escapeHtml(String(p.name).slice(0,60)||'—')}</div>
+       <div class="kv"><span>src</span>FAA · no-fly (drones prohibited)</div>`
+    : `<h4>▢ CLASS ${escapeHtml(p.cls||'E')} AIRSPACE</h4>
+       <div class="kv"><span>name</span>${escapeHtml(String(p.name).slice(0,60)||'—')}</div>
+       <div class="kv"><span>src</span>FAA · controlled airspace</div>`
 });
 
 /* =====================================================================
