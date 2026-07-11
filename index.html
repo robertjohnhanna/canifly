@@ -451,7 +451,7 @@ const gl = new maplibregl.Map({
     },
     layers:[{id:'carto',type:'raster',source:'carto'}]
   },
-  center:[10,25], zoom:2, minZoom:1.1, maxZoom:16,
+  center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a location fix lands
   renderWorldCopies:true, attributionControl:false
 });
 // No on-map controls — they were hidden behind the right panel. Zoom is
@@ -1191,6 +1191,20 @@ async function loadWorldNews(){
    ===================================================================== */
 let userMarker=null, sitrepTimer=null;
 
+// Frame the map to a `miles`-radius circle around (lat,lon). fitBounds honours
+// the panel padding, so the point lands centred in the visible area between the
+// panels. Used identically on load and on the ⌖ ME button so both give the same
+// ~10-mile view.
+function flyToRadiusMi(lat,lon,miles,opts){
+  const km=miles*1.60934;
+  const dLat=km/111.32;
+  const dLon=km/(111.32*Math.max(0.2,Math.cos(lat*Math.PI/180)));
+  try{
+    gl.fitBounds([[lon-dLon,lat-dLat],[lon+dLon,lat+dLat]],
+      Object.assign({duration:1200,maxZoom:15},opts||{}));
+  }catch(e){ gl.flyTo({center:[lon,lat],zoom:11}); }
+}
+
 async function locate(){
   try{
     const j=await getJSON('https://ipwho.is/',{timeout:9000});
@@ -1211,7 +1225,7 @@ async function locate(){
 // kick off IP + GPS location and prompt for precise GPS.
 function centerOnMe(){
   if(USER.lat!=null){
-    gl.flyTo({center:[USER.lon,USER.lat],zoom:USER.src==='gps'?11:8.5,speed:1.6});
+    flyToRadiusMi(USER.lat,USER.lon,10);
   } else {
     toast('LOCATING…','');
     locate();
@@ -1252,9 +1266,11 @@ function setUserFix(lat,lon,src,meta){
   // GPS refinement of the IP guess only gently recenters, and only if it moved
   // us far — so the load isn't a stutter of two back-to-back zoom animations.
   if(first){
-    // same zoom the ⌖ ME button uses, so load and recenter land identically
-    gl.flyTo({center:[lon,lat],zoom:src==='gps'?11:8.5,speed:1.4,curve:1.3});
-  } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>25){
+    // first fix: one clean animation to the 10-mile view (same as the ME button)
+    flyToRadiusMi(lat,lon,10);
+  } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>1){
+    // GPS refined the IP guess: gently recentre on the precise spot, keep zoom —
+    // no second zoom animation, so the load never "chops"
     gl.easeTo({center:[lon,lat],duration:700});
   }
   $('#sit-loc').textContent=(USER.place?USER.place+', ':'')+
