@@ -80,60 +80,23 @@
   ::-webkit-scrollbar-track{background:transparent}
 
   /* ---------- status badges (in SITREP header) ---------- */
-  .badge{display:flex;align-items:center;gap:4px;background:var(--panel2);
-    border:1px solid var(--line);padding:4px 8px;border-radius:5px;font-size:13px;
-    color:var(--ink-dim);white-space:nowrap;flex:0 0 auto}
-  .badge b{color:var(--ink)}
-  .dot{width:7px;height:7px;border-radius:50%;background:var(--ink-dim)}
-
-  /* ---------- panels (desktop: docked full-height side panels / mobile: bottom sheets) ---------- */
-  /* Both panels are unfloated: flush to the screen edges, full viewport height,
-     identical width. OBJECTS docks left, SITREP docks right. */
+  /* ---------- SITREP panel (desktop: docked right / mobile: bottom sheet) ----------
+     The only panel now: header, scrolling cards, canifly, then the radio. The
+     map fills everything to its left. */
   .panel{position:absolute;z-index:15;background:var(--panel);
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     display:flex;flex-direction:column;overflow:hidden}
-  #layers{top:0;left:0;width:320px;bottom:0;
-    padding-left:var(--sa-l);border:1px solid var(--line)}
-  #layers-scroll{overflow-y:auto;padding:8px;-webkit-overflow-scrolling:touch;
-    flex:1 1 auto;min-height:0}
   #sitrep{top:0;right:0;left:auto;width:320px;bottom:0;
     padding-right:var(--sa-r);border:1px solid var(--line)}
-  #obj-head{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:9px 12px;min-height:48px;
-    border-bottom:1px solid var(--line);font-size:13px;letter-spacing:2px;color:var(--accent);
-    font-weight:700}
-  #obj-head .brand{color:var(--ink-dim);letter-spacing:.5px;font-weight:400;margin-left:auto;font-size:13px}
-  /* live local time + timezone, right-justified on the DATA title line */
+  /* live local time + timezone on the SITREP title line, right-justified */
   #data-clock{margin-left:auto;color:var(--ink-dim);font-weight:400;letter-spacing:.5px;
-    font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
-  /* canifly preflight tool sits ABOVE the layer list. Bounded height (its own UI
-     is one-screen) so the layer sections stay reachable below it; negative
-     margins bleed it to the panel edges past the scroll padding. */
-  #fly-pane{height:clamp(340px,52vh,520px);margin:-8px -8px 8px;
-    border-bottom:1px solid var(--line);background:#000;display:flex;justify-content:center}
+    font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto}
+  /* canifly preflight tool sits just above the radio; bounded height so the
+     cards above keep room, its own UI is one-screen. */
+  #fly-pane{flex:0 0 auto;height:clamp(300px,42vh,460px);
+    border-top:1px solid var(--line);background:#000;display:flex;justify-content:center}
   #fly-frame{width:100%;height:100%;border:0;display:block;background:#000;margin:0 auto}
-  /* LAYERS label + its own 30s refresh timer (separate from canifly above) */
-  #layers-head{display:flex;align-items:center;gap:8px;margin:2px 2px 4px;
-    font-size:13px;letter-spacing:1.2px;color:var(--ink-dim);font-weight:700}
-  #layers-head .badge{margin-left:auto;font-weight:400}
-  #layers-head + .sec-h{margin-top:6px}   /* tuck the first group under the label */
-
   .sheet-grip{display:none}
-  .sec-h{font-size:13px;letter-spacing:1.2px;color:var(--ink-dim);
-    text-transform:uppercase;margin:12px 2px 6px}
-  .sec-h:first-child{margin-top:2px}
-  .layer{display:flex;align-items:center;gap:9px;padding:7px 6px;border-radius:8px;
-    min-height:36px}
-  .layer:hover{background:var(--panel2)}
-  .layer .sw{width:10px;height:10px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 7px currentColor}
-  .layer label{flex:1;cursor:pointer;user-select:none;-webkit-user-select:none}
-  .layer .cnt{font-size:13px;color:var(--ink-dim);min-width:30px;text-align:right}
-  .layer input{accent-color:#8a99a8;cursor:pointer;width:16px;height:16px;flex:0 0 auto}
-  .layer .pic{width:20px;height:20px;flex:0 0 auto;object-fit:contain}
-  .layer .pic.emj{display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1}
-  .layer.off{opacity:.5}
-  .layer .warnflag{color:var(--warn);font-size:13px;cursor:help}
-  #panel-foot{padding:9px 12px;border-top:1px solid var(--line);font-size:13px;
-    color:var(--ink-dim);line-height:1.5}
 
   /* ---------- emergency broadcast footer (NOAA weather radio, auto-tuned) ---------- */
   #emg{padding:10px 12px calc(10px + var(--sa-b)/2);border-top:1px solid var(--line);
@@ -190,8 +153,7 @@
     border-bottom:1px solid var(--line);flex:0 0 auto;min-height:48px}
   #sit-head .title{color:var(--accent);font-size:13px;letter-spacing:2px;font-weight:700;
     flex:0 0 auto}
-  #utc-badge{flex:0 0 auto}
-  #sit-head .loc{margin-left:auto;color:var(--ink);font-size:13px;white-space:nowrap;
+  #sit-head .loc{color:var(--ink-dim);font-size:13px;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;text-align:right;flex:1 1 auto;min-width:0}
   /* center-on-me: floating control at the bottom-right corner of the map
      (the open area sits just left of the 320px right panel) */
@@ -247,15 +209,15 @@
       align-items:center;justify-content:center;gap:3px;min-height:44px}
     #mnav button .ic{font-size:18px;line-height:1}
     #mnav button.active{color:var(--accent)}
-    /* Selected panel fills the whole screen (below the status bar, down to the
-       nav bar) and scrolls internally. It's opaque and, when closed, fully
-       HIDDEN (visibility) — belt-and-suspenders so a closed panel can never
-       leak its rows into the strip below the nav, regardless of how iOS Safari
-       resolves the dynamic viewport. Top padding uses a hard fallback because
-       Safari (non-standalone) often reports safe-area-inset-top as 0. */
+    /* Selected panel fills the whole screen (down to the nav bar) and scrolls
+       internally. It's opaque and, when closed, fully HIDDEN (visibility) so a
+       closed panel can never leak its rows into the strip below the nav. Top
+       padding is just the safe-area inset (the notch when installed; 0 in a
+       Safari tab, where the web content already sits below Safari's chrome — a
+       hard 54px fallback here was what made the header look absurdly tall). */
     .panel{left:0!important;right:0!important;top:0!important;width:auto!important;
       bottom:calc(54px + var(--sa-b))!important;max-height:none!important;z-index:20;
-      padding-top:max(var(--sa-t),54px)!important;background:var(--bg);
+      padding-top:var(--sa-t)!important;background:var(--bg);
       backdrop-filter:none;-webkit-backdrop-filter:none;
       border-radius:0;border:none;visibility:hidden;
       transform:translateY(100%);
@@ -275,9 +237,6 @@
        never matches and canifly renders its app. */
     #fly-pane{height:clamp(486px,64vh,640px)}
   }
-  @media (max-width:520px){
-    .badge{padding:3px 6px}
-  }
 </style>
 </head>
 <body>
@@ -291,35 +250,22 @@
   <circle cx="15" cy="15" r="1.3" fill="#fff"/>
 </svg>
 
-<!-- objects panel -->
-<div id="layers" class="panel">
-  <div class="sheet-grip" data-close="layers"></div>
-  <div id="obj-head">◧ DATA <span id="data-clock" title="local time at your location"></span></div>
-  <div id="layers-scroll">
-    <!-- canifly drone-preflight tool, embedded live from its own repo
-         (github.io/canifly) ABOVE the layer list. Loaded when the panel is first
-         shown; driven by the map centre via postMessage so it tracks the
-         crosshair like the SITREP does. -->
-    <div id="fly-pane"><iframe id="fly-frame" title="Can I Fly? — drone preflight" allow="geolocation"></iframe></div>
-    <!-- the 30s refresh countdown lives HERE, next to the layers label, so it's
-         clear it times the map layers — not canifly, which refreshes itself -->
-    <div id="layers-head">MAP LAYERS <span class="badge" id="utc-badge" title="time to next layer refresh"><b id="refresh-count">30</b>s to update</span></div>
-    <div class="sec-h">Aircraft</div><div id="grp-air"></div>
-    <div class="sec-h">Earth &amp; hazard</div><div id="grp-hazard"></div>
-  </div>
-  <div id="panel-foot"><span style="opacity:.6">© OpenStreetMap · CARTO</span></div>
-</div>
-
-<!-- SITREP briefing panel (right side) + auto-tuned emergency broadcast -->
+<!-- SITREP briefing panel (right) — cards, then canifly, then the auto-tuned
+     emergency radio. The only panel now; the map fills everything else. -->
 <div id="sitrep" class="panel">
   <div class="sheet-grip" data-close="sitrep"></div>
   <div id="sit-head">
     <span class="title" id="sit-title">◈ SITREP</span>
     <span class="loc" id="sit-loc">LOCATING…</span>
+    <span id="data-clock" title="local time at your location"></span>
   </div>
   <div id="sit-body">
     <div class="sit-empty">ACQUIRING POSITION…</div>
   </div>
+  <!-- canifly drone-preflight tool, embedded live from its own repo
+       (github.io/canifly), just above the radio; driven by the map centre via
+       postMessage so it tracks the crosshair like the SITREP does. -->
+  <div id="fly-pane"><iframe id="fly-frame" title="Can I Fly? — drone preflight" allow="geolocation"></iframe></div>
   <div id="emg">
     <div id="emg-top">
       <div id="emg-meta">
@@ -340,7 +286,6 @@
 <div id="mnav">
   <button data-p="" class="active"><span class="ic">🗺</span>MAP</button>
   <button data-p="sitrep"><span class="ic">◈</span>SITREP</button>
-  <button data-p="layers"><span class="ic">◧</span>DATA</button>
 </div>
 
 <div id="toast"></div>
@@ -447,18 +392,16 @@ const acPopup=p=>`<h4>${p.mil?'🎖':'✈'} ${escapeHtml(p.flight)}</h4>
 // map-area (viewport bounds) scoped variants — SITREP reflects only what's in view
 function inBounds(b,lon,lat){return lon>=b.getWest()&&lon<=b.getEast()&&lat>=b.getSouth()&&lat<=b.getNorth();}
 function featsIn(srcId){const s=gl.getSource(srcId);return s&&s._data?(s._data.features||[]):[];}
-// Bounds of the map area actually VISIBLE between the docked side panels.
-// gl.getBounds() spans the whole canvas — including the 320px strips hidden
-// under the OBJECTS / SITREP panels — so it over-counts "in view" (SITREP said
-// 9 aircraft when only 6 sit between the panels). On mobile the panels are
-// overlay sheets, so the full canvas is the visible area.
+// Bounds of the map area actually VISIBLE — i.e. left of the docked SITREP
+// panel on the right. gl.getBounds() spans the whole canvas including the strip
+// hidden under that panel, so it over-counts "in view". On mobile the panel is
+// an overlay sheet, so the full canvas is the visible area.
 function viewBounds(){
   const cv=gl.getCanvas();
   const w=cv.clientWidth, h=cv.clientHeight;
-  let l=0,r=w;
-  if(!MQ_MOBILE.matches){ l=Math.min(320,w*0.4); r=w-Math.min(320,w*0.4); }
+  const r=MQ_MOBILE.matches ? w : w-Math.min(320,w*0.4);
   const bb=new maplibregl.LngLatBounds();
-  [[l,0],[r,0],[r,h],[l,h]].forEach(pt=>bb.extend(gl.unproject(pt)));
+  [[0,0],[r,0],[r,h],[0,h]].forEach(pt=>bb.extend(gl.unproject(pt)));
   return bb;
 }
 // polygon feature -> a representative [lon,lat] (first vertex), for fly-to / bounds
@@ -579,19 +522,10 @@ let cancelCenterZoom=()=>{};
 })();
 
 /* =====================================================================
-   ICONS — rasterised to canvas and registered with map.addImage().
-   MapLibre can't render colour emoji via text-field, so every marker is
-   a small image: directional silhouettes (plane/ship, drawn pointing
-   "up" = north so icon-rotate = heading works) and emoji glyphs.
+   ICONS — the only map markers left are the three aircraft silhouettes
+   (green civil / yellow military / red emergency), drawn nose-up so
+   icon-rotate = heading works. Rasterised to canvas, registered with addImage.
    ===================================================================== */
-function emojiIcon(emoji,px){
-  const s=px||46, c=document.createElement('canvas'); c.width=c.height=s;
-  const x=c.getContext('2d',{willReadFrequently:true});
-  x.font=Math.floor(s*0.78)+'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla",sans-serif';
-  x.textAlign='center'; x.textBaseline='middle';
-  x.fillText(emoji,s/2,s*0.56);
-  return x.getImageData(0,0,s,s);
-}
 function shapeIcon(color,pts,px){
   const s=px||40, c=document.createElement('canvas'); c.width=c.height=s;
   const x=c.getContext('2d',{willReadFrequently:true}); x.translate(s/2,s/2); const u=s/32;
@@ -601,70 +535,16 @@ function shapeIcon(color,pts,px){
   x.closePath(); x.fill(); x.stroke();
   return x.getImageData(0,0,s,s);
 }
-// same silhouette as a data-URL, for the OBJECTS panel (matches the map icon)
-function shapeURL(color,pts){
-  const s=40,c=document.createElement('canvas');c.width=c.height=s;
-  const x=c.getContext('2d');x.translate(s/2,s/2);const u=s/32;
-  x.fillStyle=color;x.strokeStyle='rgba(3,8,14,.7)';x.lineWidth=u*1.3;x.lineJoin='round';
-  x.beginPath();pts.forEach((p,i)=>{const X=p[0]*u,Y=p[1]*u;i?x.lineTo(X,Y):x.moveTo(X,Y);});
-  x.closePath();x.fill();x.stroke();return c.toDataURL();
-}
-// shared emoji table — used for BOTH the map markers and the panel rows so the
-// selector panel always matches the map (previously the panel had its own
-// shorter list, so e.g. flood gauges showed a plain dot).
-const ICON_EMOJI={'ico-fire':'🔥','ico-volcano':'🌋','ico-cyclone':'🌀','ico-flood':'🌊',
-  'ico-quake':'🟠','ico-drought':'🏜️','ico-ice':'🧊','ico-storm':'⛈️','ico-dust':'🌫️',
-  'ico-antenna':'📡','ico-radio':'📻','ico-atc':'🛬',
-  'ico-train':'🚆','ico-disaster':'⚠️','ico-news':'📰',
-  'ico-conflict':'💥','ico-malware':'🦠','ico-outage':'📴',
-  'ico-water':'💧','ico-pin':'📍'};
-// OBJECTS-panel icon HTML that mirrors the on-map marker for each layer
-function panelIconHTML(cfg){
-  const ic=cfg.icon||'';
-  if(ic.startsWith('ac-')) return `<img class="pic" src="${shapeURL(cfg.color,PLANE)}">`;
-  if(ic==='ico-cam'&&CAM_URL) return `<img class="pic" src="${CAM_URL}">`;
-  const em=ICON_EMOJI[ic];
-  if(em) return `<span class="pic emj">${em}</span>`;
-  return `<span class="sw" style="color:${cfg.color};background:${cfg.color}"></span>`;
-}
 // plane silhouette, nose up
 const PLANE=[[0,-15],[-1.6,-6],[-13,3],[-13,6],[-1.6,3.5],[-1.6,11],[-5,14.5],[-5,16],[0,14],
   [5,16],[5,14.5],[1.6,11],[1.6,3.5],[13,6],[13,3],[1.6,-6]];
 function addImg(name,data){ if(!gl.hasImage(name)) gl.addImage(name,data,{pixelRatio:2}); }
 const YEL='#ffce4d';
-// crisp vector glyphs (clearer than tiny emoji) — return {data,url}
-function makeGlyph(draw){
-  const s=44,c=document.createElement('canvas');c.width=c.height=s;
-  const x=c.getContext('2d',{willReadFrequently:true});draw(x,s);
-  return {data:x.getImageData(0,0,s,s),url:c.toDataURL()};
-}
-function camIcon(){ return makeGlyph((x,s)=>{ const u=s/32; x.translate(s/2,s/2);
-  x.strokeStyle='rgba(3,8,14,.85)';x.lineWidth=u*1.2;
-  x.fillStyle='#38d0ff';
-  // body
-  x.beginPath();x.roundRect(-13*u,-7*u,26*u,16*u,3*u);x.fill();x.stroke();
-  // viewfinder bump
-  x.beginPath();x.roundRect(-4*u,-11*u,8*u,4*u,1.5*u);x.fill();x.stroke();
-  // lens
-  x.fillStyle='#0b1420';x.beginPath();x.arc(0,1*u,5.5*u,0,7);x.fill();x.stroke();
-  x.fillStyle='#9fe8ff';x.beginPath();x.arc(0,1*u,2.4*u,0,7);x.fill();
-}); }
-let CAM_URL='';
 function registerIcons(){
   addImg('ac-near',  shapeIcon('#2fe07a',PLANE));   // aircraft = green
   addImg('ac-mil',   shapeIcon(YEL,PLANE));         // military = yellow
   addImg('ac-sos',   shapeIcon('#ff4455',PLANE,44));// emergency = red
-  const cam=camIcon();
-  addImg('ico-cam',cam.data); CAM_URL=cam.url;      // clearer camera glyph
-  for(const k in ICON_EMOJI) addImg(k,emojiIcon(ICON_EMOJI[k]));
 }
-// EONET category -> icon; GDACS type -> icon
-const EONET_ICON={wildfires:'ico-fire',volcanoes:'ico-volcano',severeStorms:'ico-storm',
-  seaLakeIce:'ico-ice',floods:'ico-flood',drought:'ico-drought',dustHaze:'ico-dust',
-  snow:'ico-ice',earthquakes:'ico-quake',landslides:'ico-disaster',tempExtremes:'ico-storm',
-  manmade:'ico-disaster',waterColor:'ico-flood'};
-const GDACS_ICON={EQ:'ico-quake',TC:'ico-cyclone',FL:'ico-flood',VO:'ico-volcano',
-  DR:'ico-drought',WF:'ico-fire',TS:'ico-flood'};
 
 /* =====================================================================
    2. LAYER DEFINITIONS
@@ -728,108 +608,6 @@ defLayer({
 
 
 /* ---------------- Hazard / Environment ---------------- */
-defLayer({
-  id:'eonet', label:'Natural events (NASA)', color:'#ff8a3d', group:'hazard', refresh:300, colored:true, defaultOff:true, bg:true,
-  icon:'ico-fire', iconProp:true, iconSize:0.5,
-  loader: async ()=>{
-    // NASA EONET v3 — live wildfires, severe storms, volcanoes, ice…  ACAO:*
-    const j=await getJSON('https://eonet.gsfc.nasa.gov/api/v3/events?status=open',{timeout:20000});
-    const CAT={wildfires:'#ff6a3d',severeStorms:'#5cc8ff',volcanoes:'#ff4d4d',
-      seaLakeIce:'#9fdcff',earthquakes:'#ff5c6c',floods:'#4d7cff',landslides:'#c98a4b',
-      snow:'#dfefff',drought:'#e0c34b',dustHaze:'#d0b090',manmade:'#c77dff',
-      waterColor:'#4be0c9',tempExtremes:'#ff9f43'};
-    const feats=[];
-    (j.events||[]).forEach(ev=>{
-      const g=(ev.geometry||[]).slice(-1)[0]; // latest geometry
-      if(!g||!g.coordinates) return;
-      let c=g.coordinates;
-      if(g.type==='Polygon') c=c[0][0];
-      if(!Array.isArray(c)||c.length<2||!isFinite(c[0])||!isFinite(c[1])) return;
-      const cat=(ev.categories&&ev.categories[0])||{};
-      const link=(ev.sources&&ev.sources[0]&&ev.sources[0].url)||'';
-      feats.push({type:'Feature',geometry:{type:'Point',coordinates:[c[0],c[1]]},
-        properties:{_kind:'eonet',_col:CAT[cat.id]||'#ff8a3d',_icon:EONET_ICON[cat.id]||'ico-disaster',
-          title:ev.title,link:link,
-          cat:cat.title||'event',mag:g.magnitudeValue?g.magnitudeValue+' '+(g.magnitudeUnit||''):'',
-          date:g.date||''}});
-    });
-    return {type:'FeatureCollection',features:feats};
-  },
-  popup:p=>`<h4>🌍 ${escapeHtml(p.title)}</h4>
-    <div class="kv"><span>category</span>${escapeHtml(p.cat)}</div>
-    ${p.mag?`<div class="kv"><span>magnitude</span>${escapeHtml(p.mag)}</div>`:''}
-    ${p.date?`<div class="kv"><span>updated</span>${escapeHtml(fmtDateTime(p.date))}</div>`:''}
-    <div class="kv"><span>src</span>NASA EONET</div>
-    ${p.link?`<div class="lnk"><a target="_blank" rel="noopener" href="${escapeHtml(p.link)}">source ↗</a></div>`:''}`
-});
-
-
-
-defLayer({
-  id:'volcano', label:'Holocene volcanoes', color:'#ff8a5c', group:'hazard', refresh:0, defaultOff:true, icon:'ico-volcano', iconSize:0.44,
-  // Smithsonian GVP's web service is 403/CORS-blocked in browsers, so per the
-  // spec's "(static)" tag this is a curated Holocene subset — keyless, no fetch.
-  loader: async ()=>({type:'FeatureCollection',features:VOLCANOES.map(v=>({
-    type:'Feature',geometry:{type:'Point',coordinates:[v[2],v[1]]},
-    properties:{_kind:'volcano',name:v[0],elev:v[3]}}))}),
-  popup:p=>`<h4>🌋 ${escapeHtml(p.name)}</h4>
-    <div class="kv"><span>summit</span>${p.elev} m</div>
-    <div class="kv"><span>src</span>Smithsonian GVP (static)</div>`
-});
-
-defLayer({
-  id:'gdacs', label:'Global disasters', color:'#ff6a3d', group:'hazard', refresh:60, colored:true, defaultOff:true, bg:true,
-  // GDACS — UN/EC global disaster alerts: quakes, cyclones, floods, volcanoes,
-  // droughts, wildfires; colour = alert level (green/orange/red). Keyless, CORS *.
-  loader: async ()=>{
-    const j=await getJSON('https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP',{timeout:20000});
-    const TYPE={EQ:'earthquake',TC:'cyclone',FL:'flood',VO:'volcano',DR:'drought',WF:'wildfire',TS:'tsunami'};
-    const LVL={Green:'#4be08a',Orange:'#ffb454',Red:'#ff5c6c'};
-    return {type:'FeatureCollection',features:(j.features||[])
-      .filter(f=>f.geometry&&f.geometry.type==='Point').map(f=>{
-        const p=f.properties||{};
-        return {type:'Feature',geometry:f.geometry,properties:{_kind:'gdacs',
-          _icon:GDACS_ICON[p.eventtype]||'ico-disaster',
-          _col:LVL[p.alertlevel]||'#ffb454',
-          name:p.name||TYPE[p.eventtype]||'event',eventname:p.eventname||'',
-          type:TYPE[p.eventtype]||p.eventtype,
-          level:p.alertlevel,country:p.country||'',
-          sev:(p.severitydata&&p.severitydata.severitytext)||''}};
-      })};
-  },
-  icon:'ico-disaster', iconProp:true, iconSize:0.5,
-  popup:p=>`<h4>🌀 ${escapeHtml(String(p.type).toUpperCase())} — ${escapeHtml(p.level)}</h4>
-    <div class="kv"><span>event</span>${escapeHtml(p.name)}</div>
-    ${p.country?`<div class="kv"><span>country</span>${escapeHtml(p.country)}</div>`:''}
-    ${p.sev?`<div class="kv"><span>severity</span>${escapeHtml(p.sev)}</div>`:''}
-    <div class="kv"><span>src</span>GDACS (UN/EC)</div>`
-});
-
-defLayer({
-  // THE earthquake layer (USGS 24h duplicate removed). Real-time global
-  // seismicity from EMSC — dots SIZED by magnitude and COLOURED by recency,
-  // so a big fresh quake reads instantly. bg-loaded for SITREP anomalies.
-  id:'emsc', label:'Earthquakes (live)', color:'#ff8a5c', group:'hazard', refresh:30,
-  defaultOff:true, bg:true, sized:true, colored:true,
-  loader: async ()=>{
-    const j=await getJSON('https://www.seismicportal.eu/fdsnws/event/1/query?limit=1000&format=json&minmag=2',{timeout:15000});
-    const now=Date.now();
-    (j.features||[]).forEach(f=>{ const p=f.properties||{};
-      const mag=+p.mag||0, age=(now-Date.parse(p.time))/3.6e6; // hours since event
-      // colour = recency (fresh → hot), but any major quake stays vivid red
-      let col= age<1?'#ff2d55': age<6?'#ff6a3d': age<24?'#ffb454': age<72?'#e0c34b':'#7f8c9b';
-      if(mag>=6) col='#ff2d55'; else if(mag>=5&&age<72) col='#ff6a3d';
-      f.properties={_kind:'emsc',_r:1.6+mag*1.4,_col:col,mag:p.mag,age:age,
-        place:p.flynn_region||p.region||'',time:p.time,depth:p.depth}; });
-    return j;
-  },
-  popup:p=>`<h4>M ${p.mag} EARTHQUAKE</h4>
-    <div class="kv"><span>region</span>${escapeHtml(p.place)}</div>
-    <div class="kv"><span>depth</span>${Math.round(p.depth||0)} ${U('km')}</div>
-    <div class="kv"><span>time</span>${fmtTime(p.time)}${p.age!=null?' · '+(p.age<1?Math.round(p.age*60)+U(' min'):Math.round(p.age)+U(' h'))+' ago':''}</div>
-    <div class="kv"><span>src</span>EMSC (live)</div>`
-});
-
 defLayer({
   // NOAA / NWS active alerts, filtered to WARNINGS ONLY (not watches, advisories
   // or statements) — the US half of the worldwide warnings picture (GDACS below
@@ -998,46 +776,26 @@ function refreshDueLayers(){
     if(pulseCount%everyN===0) runLayer(cfg);
   });
 }
-// live local-time clock (with timezone abbreviation) in the DATA panel header —
+// live local-time clock (with timezone abbreviation) in the SITREP header —
 // USER.tz once the location resolves, browser zone until then
 function updateClock(){
   const el=$('#data-clock'); if(!el) return;
   el.textContent=new Date().toLocaleTimeString([],
-    Object.assign({hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'},tzOpt()));
+    Object.assign({hour:'numeric',minute:'2-digit',timeZoneName:'short'},tzOpt()));
 }
 function refreshTick(){
   updateClock();
-  const el=$('#refresh-count');
   const elapsed=Math.floor((Date.now()-refreshBase)/1000);
-  if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); if(el) el.textContent=REFRESH_S; }
-  else if(el) el.textContent=REFRESH_S-elapsed;
+  if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); }
 }
 
-function buildLayerPanel(){
-  const groups={air:'#grp-air',hazard:'#grp-hazard'};
-  // panel order within a group: lower `ord` first (NWS, then outlook), the rest
-  // keep their definition order (stable sort)
-  LAYERS.slice().sort((a,b)=>(a.ord||99)-(b.ord||99)).forEach(cfg=>{
-    LAYER_STATE[cfg.id]={cnt:0,on:!cfg.defaultOff,started:!cfg.defaultOff,
+// No layer selector: every layer's map source + style is created here and stays
+// on (SPC is defaultOff = hidden, loaded only to feed the SITREP outlook card).
+function initLayers(){
+  LAYERS.forEach(cfg=>{
+    LAYER_STATE[cfg.id]={cnt:0,on:!cfg.defaultOff,started:false,
       gen:0,quickTimer:null,fails:0,loading:false};
     ensureMapLayer(cfg);
-    const row=el('div','layer'+(cfg.defaultOff?' off':''));
-    row.id='row-'+cfg.id;
-    row.innerHTML=`
-      <input type="checkbox" id="ck-${cfg.id}" ${cfg.defaultOff?'':'checked'}>
-      ${panelIconHTML(cfg)}
-      <label for="ck-${cfg.id}">${cfg.label}</label>
-      <span class="cnt">–</span>`;
-    $(groups[cfg.group]).appendChild(row);
-    row.querySelector('input').addEventListener('change',ev=>{
-      const st=LAYER_STATE[cfg.id];
-      st.on=ev.target.checked;
-      row.classList.toggle('off',!st.on);
-      const vis=st.on?'visible':'none';
-      gl.setLayoutProperty('ly-'+cfg.id,'visibility',vis);
-      if(gl.getLayer('lyl-'+cfg.id)) gl.setLayoutProperty('lyl-'+cfg.id,'visibility',vis);
-      if(st.on) runLayer(cfg);   // refresh immediately on show (data already pulled on load)
-    });
   });
 }
 
@@ -1230,15 +988,15 @@ function centerOnMe(){
 }
 $('#loc-btn').addEventListener('click',centerOnMe);
 
-// Map padding keeps the geographic centre inside the open area between the
-// panels (desktop only; on mobile the panels are overlay sheets).
+// Map padding keeps the geographic centre inside the open area left of the
+// docked SITREP panel (desktop only; on mobile the panel is an overlay sheet).
 let _pad=null;
 function setMapPadding(){
-  // both docked side panels are 320px wide — keep map content centred between
-  // them (desktop); on mobile the panels are overlay sheets so no padding.
+  // the SITREP panel is docked right (320px) — keep map content centred in the
+  // area to its left; on mobile the panel is an overlay sheet so no padding.
   const p=MQ_MOBILE.matches
     ? {top:0,right:0,bottom:0,left:0}
-    : {top:20,left:336,right:336,bottom:24};
+    : {top:20,left:24,right:336,bottom:24};
   if(_pad&&_pad.top===p.top&&_pad.left===p.left&&_pad.right===p.right&&_pad.bottom===p.bottom) return;
   _pad=p; gl.setPadding(p);   // only when it actually changed — avoids needless camera nudges
 }
@@ -1313,9 +1071,8 @@ async function reverseFill(){
   }catch(e){}
 }
 
-// concise text, no "…" (CSS clips); clean GDACS storm name
+// concise text, no "…" (CSS clips)
 const cut=(s,n)=>escapeHtml(String(s==null?'':s).trim().slice(0,n));
-const gName=p=>p.eventname||p.name||p.type||'event';
 
 // -- CATEGORY MODEL --------------------------------------------------------
 // Each in-view feature becomes ONE individual SITREP card. A cfg maps a feed to
@@ -1336,21 +1093,6 @@ const CATS=[
    cls:f=>/Extreme|Severe/i.test(f.properties.severity)?'danger':'alert',
    head:f=>cut((f.properties.event||'warning').replace(/\s*warning$/i,'').toUpperCase(),22),
    sub:f=>cut(f.properties.area,26), detail:f=>cut(f.properties.severity||'active',12)},
-  {src:'src-emsc', hazard:true, icon:'🟠',
-   // alarm on FRESH strong quakes only (<24 h) — the feed holds days of history
-   cls:f=>(+f.properties.mag>=5&&f.properties.age<24)?'danger'
-       :(+f.properties.mag>=4&&f.properties.age<24)?'alert':'',
-   head:f=>'M'+f.properties.mag+' · '+cut(f.properties.place,16),
-   sub:f=>'depth '+Math.round(f.properties.depth||0)+U(' km'),
-   detail:f=>fmtTime(f.properties.time)},
-  {src:'src-eonet', hazard:true, icon:'🔥', cls:()=>'',
-   head:f=>cut(f.properties.title,20),
-   sub:f=>cut(f.properties.cat||'natural event',22), detail:f=>''},
-  {src:'src-gdacs', hazard:true, icon:'🌀',
-   cls:f=>f.properties.level==='Red'?'danger':f.properties.level==='Orange'?'alert':'',
-   head:f=>cut(gName(f.properties),18),
-   sub:f=>cut((f.properties.type||'event')+(f.properties.country?' · '+f.properties.country:''),26),
-   detail:f=>cut(f.properties.level||f.properties.type||'',14)},
   {src:'src-nearair', hazard:false, icon:'✈', cls:()=>'',
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
    sub:f=>escapeHtml(f.properties.desc||f.properties.type||'aircraft'), detail:ALT},
@@ -1660,12 +1402,12 @@ async function updateAreaLabel(){
   }catch(e){ setSitLoc('', c.lat.toFixed(1)+', '+c.lng.toFixed(1)); }
 }
 
-// mobile: MAP / LAYERS / RADIO bottom nav toggles the panels as sheets
+// mobile: MAP / SITREP bottom nav toggles the SITREP sheet
 const mnavBtns=document.querySelectorAll('#mnav button');
 function openSheet(which){
-  ['layers','sitrep'].forEach(id=>$('#'+id).classList.toggle('open',id===which));
+  $('#sitrep').classList.toggle('open',which==='sitrep');
   mnavBtns.forEach(b=>b.classList.toggle('active',b.dataset.p===which));
-  if(which==='layers') ensureFly();   // mobile: load canifly when the DATA sheet opens
+  if(which==='sitrep') ensureFly();   // mobile: load canifly when the SITREP sheet opens
 }
 mnavBtns.forEach(b=>b.addEventListener('click',()=>openSheet(b.dataset.p)));
 document.querySelectorAll('.sheet-grip').forEach(gr=>
@@ -1701,44 +1443,21 @@ window.addEventListener('message',e=>{
 gl.on('moveend',pushFlyLoc);
 
 /* =====================================================================
-   12. STATIC DATA — curated, keyless (no fetch)
-   ===================================================================== */
-// [name, lat, lon, summit_m] — Smithsonian GVP Holocene subset
-const VOLCANOES=[
-  ['Etna',37.751,14.993,3357],['Vesuvius',40.821,14.426,1281],['Stromboli',38.789,15.213,924],
-  ['Santorini',36.404,25.396,367],['Eyjafjallajökull',63.633,-19.633,1651],['Hekla',63.983,-19.700,1491],
-  ['Grímsvötn',64.416,-17.316,1725],['Fagradalsfjall',63.905,-22.269,385],
-  ['Mount St. Helens',46.200,-122.180,2549],['Kilauea',19.421,-155.287,1247],
-  ['Mauna Loa',19.475,-155.608,4170],['Mount Rainier',46.853,-121.760,4392],['Yellowstone',44.430,-110.670,2805],
-  ['Popocatépetl',19.023,-98.622,5426],['Colima',19.514,-103.620,3850],['Fuego',14.473,-90.880,3763],
-  ['Nevado del Ruiz',4.892,-75.324,5279],['Cotopaxi',-0.677,-78.436,5911],['Villarrica',-39.420,-71.930,2847],
-  ['Sabancaya',-15.787,-71.857,5960],['Erebus',-77.530,167.170,3794],['Nyiragongo',-1.520,29.250,3470],
-  ['Ol Doinyo Lengai',-2.764,35.914,2962],['Piton de la Fournaise',-21.244,55.708,2632],
-  ['Fuji',35.361,138.727,3776],['Sakurajima',31.585,130.657,1117],['Aso',32.884,131.104,1592],
-  ['Taal',14.002,120.993,311],['Mayon',13.257,123.685,2462],['Pinatubo',15.130,120.350,1486],
-  ['Merapi',-7.540,110.446,2910],['Krakatau',-6.102,105.423,813],['Semeru',-8.108,112.922,3657],
-  ['Agung',-8.343,115.508,2997],['Tambora',-8.250,118.000,2850],['Rinjani',-8.420,116.470,3726],
-  ['White Island',-37.520,177.180,321],['Ruapehu',-39.281,175.564,2797],['Ambrym',-16.250,168.120,1334],
-  ['Yasur',-19.532,169.447,361],['Klyuchevskoy',56.056,160.642,4754],['Shiveluch',56.653,161.360,3283],
-  ['Bezymianny',55.972,160.595,2882],['Karymsky',54.049,159.443,1536],['Bardarbunga',64.633,-17.516,2009]
-];
-
-/* =====================================================================
    13. BOOT
    ===================================================================== */
 gl.on('load',()=>{
   registerIcons();
-  buildLayerPanel();
+  initLayers();
   bindLayerPopups();
-  // Pull every layer once on load so its count is available immediately, even
-  // while hidden.
+  // Pull every layer once on load (kept layers stay on the map; SPC feeds the
+  // SITREP outlook card only).
   LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; scheduleLayer(cfg); });
-  refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // 30s refresh + countdown
+  refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // 30s refresh + clock
   loadEmgPool(); // warm the emergency-broadcast pool so the first fix tunes fast
   loadKp();   setInterval(loadKp,180000);   // space weather: planetary Kp (SITREP card)
   loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare (SITREP card)
   setMapPadding();
-  if(!MQ_MOBILE.matches) ensureFly();   // desktop: DATA panel is always visible → load canifly now
+  if(!MQ_MOBILE.matches) ensureFly();   // desktop: SITREP panel is always visible → load canifly now
   locate();
   sitrepTick(); // SITREP works off the map area, even before a location fix
   if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,90000);
