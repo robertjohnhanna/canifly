@@ -405,6 +405,15 @@ function havKm(lat1,lon1,lat2,lon2){
     Math.cos(lat1*d)*Math.cos(lat2*d)*Math.sin((lon2-lon1)*d/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
+// Initial compass bearing from point 1 → point 2, degrees (0=N, clockwise).
+function bearing(lat1,lon1,lat2,lon2){
+  const d=Math.PI/180;
+  const y=Math.sin((lon2-lon1)*d)*Math.cos(lat2*d);
+  const x=Math.cos(lat1*d)*Math.sin(lat2*d)-Math.sin(lat1*d)*Math.cos(lat2*d)*Math.cos((lon2-lon1)*d);
+  return (Math.atan2(y,x)/d+360)%360;
+}
+const COMPASS8=['N','NE','E','SE','S','SW','W','NW'];
+const compass=deg=>COMPASS8[Math.round(deg/45)%8];
 // Imperial units. U() wraps a unit token so it stays lowercase inside
 // ALL-CAPS chrome (see .u in CSS). Distances in mi/ft, temp °F, wind mph.
 const U = s => `<span class="u">${s}</span>`;
@@ -711,7 +720,7 @@ const GDACS_ICON={EQ:'ico-quake',TC:'ico-cyclone',FL:'ico-flood',VO:'ico-volcano
 const LAYERS=[];
 const defLayer=c=>LAYERS.push(c);
 // user position state — filled by IP geolocation instantly, refined by GPS
-const USER={lat:null,lon:null,place:'',region:'',cc:'',src:null,tz:''};
+const USER={lat:null,lon:null,place:'',region:'',cc:'',src:null,tz:'',elevFt:null};
 
 /* ---------------- Movement ---------------- */
 defLayer({
@@ -1510,7 +1519,21 @@ function setUserFix(lat,lon,src,meta){
   if(src==='gps'&&!meta) reverseFill();
   // (re)tune the nearest emergency broadcast every time the location changes
   emergencyTune(lat,lon);
+  fetchUserElev(lat,lon);
   sitrepTick();
+}
+
+// Ground elevation at the user's location (feet), for aircraft AGL alerts.
+// Keyless/CORS Open-Meteo; refetch only when moved > ~0.5 km.
+let __elevAt=null;
+async function fetchUserElev(lat,lon){
+  if(__elevAt&&havKm(__elevAt[0],__elevAt[1],lat,lon)<0.5&&USER.elevFt!=null) return;
+  __elevAt=[lat,lon];
+  try{
+    const g=await getJSON(`https://api.open-meteo.com/v1/elevation?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`);
+    const m=g&&g.elevation&&g.elevation[0];
+    if(typeof m==='number') USER.elevFt=m*3.28084;
+  }catch(e){}
 }
 
 async function reverseFill(){
@@ -1540,7 +1563,11 @@ async function sitrepTick(){
   const flyBtn=f=>llBtn(f.geometry.coordinates[0],f.geometry.coordinates[1]);
   const polyFlyBtn=f=>{const p=polyPt(f);return p?llBtn(p[0],p[1]):'';};
   const openBtn=(url,lbl)=>`<button class="act" data-act="open" data-url="${escapeHtml(url)}">${lbl||'OPEN'}</button>`;
-  const dist=f=>fmtMi(havKm(lat,lon,f.geometry.coordinates[1],f.geometry.coordinates[0]));
+  // Distance strings are "from me": bearing + range from the user's location
+  // (falling back to map center before a fix), e.g. "NW 180 mi".
+  const refLat=USER.lat!=null?USER.lat:lat, refLon=USER.lon!=null?USER.lon:lon;
+  const dirMi=(la,lo)=>compass(bearing(refLat,refLon,la,lo))+' '+fmtMi(havKm(refLat,refLon,la,lo));
+  const dist=f=>dirMi(f.geometry.coordinates[1],f.geometry.coordinates[0]);
   const cut=(s,n)=>escapeHtml(String(s==null?'':s).trim().slice(0,n));   // concise, no "…"
   const gName=p=>p.eventname||p.name||p.type||'event';   // clean GDACS storm name (e.g. "BAVI-26" not "Tropical Cyclone BAVI-26")
   const SWPC='https://www.swpc.noaa.gov/', SPCU='https://www.spc.noaa.gov/products/outlook/day1otlk.html';
@@ -1554,13 +1581,33 @@ async function sitrepTick(){
   const sosAll=featsIn('src-sos');
   if(sosAll.length){ const n=nearestIn('src-sos',lat,lon);
     anom.push(['danger','🚨','AIRCRAFT EMERGENCY',sosAll.length+' on 7700/7600/7500',
-      n?('nearest '+cut(n.f.properties.flight||'?',8)+' · '+fmtMi(n.km)):'monitoring squawks',
+      n?('nearest '+cut(n.f.properties.flight||'?',8)+' · '+dist(n.f)):'monitoring squawks',
       n?flyBtn(n.f):openBtn('https://globe.adsbexchange.com/','MAP')]); }
+  // LOW OVERFLIGHT: any aircraft (civil / military / emergency) within ~1 mile of
+  // ME and low above ground. AGL = aircraft MSL altitude − my ground elevation.
+  // < 1000' AGL → alert (amber); < 500' AGL → warning (red).
+  if(USER.lat!=null){
+    const low=[];
+    ['src-nearair','src-mil','src-sos'].forEach(s=>featsIn(s).forEach(f=>{
+      const a=+f.properties.alt; if(!isFinite(a)) return;
+      const km=havKm(USER.lat,USER.lon,f.geometry.coordinates[1],f.geometry.coordinates[0]);
+      if(km>1.609) return;                      // within one mile of me
+      low.push({f,km,agl:a-(USER.elevFt||0)});
+    }));
+    if(low.length){
+      low.sort((x,y)=>x.agl-y.agl);
+      const lo=low[0];
+      if(lo.agl<1000){ const p=lo.f.properties;
+        anom.push([lo.agl<500?'danger':'alert','🛩️','LOW OVERFLIGHT',
+          low.length+' within 1 mi · '+cut(p.flight||p.type||'aircraft',10),
+          Math.max(0,Math.round(lo.agl))+U(' ft')+' AGL · '+dist(lo.f),flyBtn(lo.f)]); }
+    }
+  }
   const gRed=featsIn('src-gdacs').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(f.properties.level==='Red'||f.properties.level==='Orange'));
   if(gRed.length){ const nr=nearView('src-gdacs',b,lat,lon);
     anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',
       gRed.length+' red/orange in view',
-      nr?(cut(gName(nr.f.properties),15)+' · '+fmtMi(nr.km)):'GDACS multi-hazard',
+      nr?(cut(gName(nr.f.properties),15)+' · '+dist(nr.f)):'GDACS multi-hazard',
       nr?flyBtn(nr.f):'']); }
   const nws=nwsInView(b);
   if(nws.length){
@@ -1642,24 +1689,24 @@ async function sitrepTick(){
   if(acN){ const nn=nearView('src-nearair',b,lat,lon);
     row('','✈',acN+' AIRCRAFT IN VIEW',
       nn?('nearest '+cut(nn.f.properties.flight||'?',8)):'live ADS-B traffic',
-      nn?(fmtMi(nn.km)+' · '+nn.f.properties.alt+U(' ft')):'',
+      nn?(dist(nn.f)+' · '+nn.f.properties.alt+U(' ft')):'',
       listBtn('src-nearair','AIRCRAFT IN VIEW')); }
   const milN=countView('src-mil',b);
   if(milN){ const nm=nearView('src-mil',b,lat,lon);
     row('alert','🎖',milN+' MILITARY IN VIEW',
       nm?('nearest '+cut(nm.f.properties.flight||'?',8)+(nm.f.properties.type&&nm.f.properties.type!=='?'?' · '+cut(nm.f.properties.type,5):'')):'military ADS-B',
-      nm?(fmtMi(nm.km)+' · '+nm.f.properties.alt+U(' ft')):'',listBtn('src-mil','MILITARY IN VIEW')); }
+      nm?(dist(nm.f)+' · '+nm.f.properties.alt+U(' ft')):'',listBtn('src-mil','MILITARY IN VIEW')); }
   const nq=nearView('src-emsc',b,lat,lon);
   if(nq) row('','🌍','M'+nq.f.properties.mag+' EARTHQUAKE',cut(nq.f.properties.place,24),
-    fmtMi(nq.km)+' · '+fmtTime(nq.f.properties.time),flyBtn(nq.f));
+    dist(nq.f)+' · '+fmtTime(nq.f.properties.time),flyBtn(nq.f));
   // Natural events (wildfires etc.): OPEN the event's source page (like SPC).
   const ne=nearView('src-eonet',b,lat,lon);
   if(ne) row('','🔥',cut((ne.f.properties.cat||'EVENT').toUpperCase(),20),cut(ne.f.properties.title,24),
-    fmtMi(ne.km)+' · NASA EONET',
+    dist(ne.f)+' · NASA EONET',
     openBtn(ne.f.properties.link||('https://www.google.com/search?q='+encodeURIComponent(String(ne.f.properties.title||'natural event'))),'OPEN'));
   const nd=nearView('src-gdacs',b,lat,lon);
   if(nd&&!gRed.includes(nd.f)) row('','🌀',cut((nd.f.properties.type||'DISASTER').toUpperCase(),18),cut(gName(nd.f.properties),24),
-    fmtMi(nd.km)+' · '+(nd.f.properties.level||'')+(nd.f.properties.country?' · '+cut(nd.f.properties.country,10):''),flyBtn(nd.f));
+    dist(nd.f)+' · '+(nd.f.properties.level||'')+(nd.f.properties.country?' · '+cut(nd.f.properties.country,10):''),flyBtn(nd.f));
 
   // -- WORLD NEWS: conflict/disaster/politics/etc. (not map-scoped) — Wikipedia.
   //    One blurb clamped to 3 lines; every item opens its source. --
@@ -1684,14 +1731,16 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 // roster of point features in the current view, nearest-first, with a per-item VIEW
 function aircraftListHTML(srcId){
   const bb=viewBounds(), c=gl.getCenter();
+  const rLat=USER.lat!=null?USER.lat:c.lat, rLon=USER.lon!=null?USER.lon:c.lng;
   const feats=featsIn(srcId).filter(f=>f.geometry&&f.geometry.type==='Point'&&inBounds(bb,f.geometry.coordinates[0],f.geometry.coordinates[1]))
-    .map(f=>({f,km:havKm(c.lat,c.lng,f.geometry.coordinates[1],f.geometry.coordinates[0])}))
+    .map(f=>({f,km:havKm(rLat,rLon,f.geometry.coordinates[1],f.geometry.coordinates[0])}))
     .sort((x,y)=>x.km-y.km);
   if(!feats.length) return '<div class="sit-empty">NO AIRCRAFT IN THIS AREA</div>';
-  // minimal 3-line entry: callsign · model · distance + altitude (no icon, no buttons)
+  // minimal 3-line entry: callsign · model · direction+distance + altitude (no icon, no buttons)
   return feats.map(({f,km})=>{ const p=f.properties;
     const model=escapeHtml(p.desc||p.type||'aircraft');
-    const da=fmtMi(km)+' · '+(p.alt!=null&&p.alt!=='?'?p.alt+U(' ft'):'—');
+    const dir=compass(bearing(rLat,rLon,f.geometry.coordinates[1],f.geometry.coordinates[0]));
+    const da=dir+' '+fmtMi(km)+' · '+(p.alt!=null&&p.alt!=='?'?p.alt+U(' ft'):'—');
     return `<div class="mrow${p.mil?' mil':''}"><b>${escapeHtml(p.flight||p.hex||'?')}</b><span>${model}</span><span>${da}</span></div>`;
   }).join('');
 }
@@ -1822,7 +1871,9 @@ async function emergencyTune(lat,lon){
 }
 function updateEmgLabel(best){
   $('#emg-name').textContent=best.s.name;
-  $('#emg-sub').innerHTML=fmtMi(best.km)+' away';   // fmtMi keeps units in .u (lowercase)
+  // direction + range from me (fmtMi keeps units in .u, lowercase)
+  const dir=(USER.lat!=null)?compass(bearing(USER.lat,USER.lon,best.s.lat,best.s.lon))+' ':'';
+  $('#emg-sub').innerHTML=dir+fmtMi(best.km)+' away';
 }
 function playEmergency(s){
   audio.src=s.url;
