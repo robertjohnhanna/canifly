@@ -1837,7 +1837,6 @@ gl.on('load',()=>{
   sitrepTick(); // SITREP works off the map area, even before a location fix
   if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,90000);
   [700,3000,7000].forEach(t=>setTimeout(()=>{ setMapPadding(); sitrepTick(); },t));
-  toast('SITREP ONLINE · '+LAYERS.length+' LIVE FEEDS','');
 });
 </script>
 </body>
