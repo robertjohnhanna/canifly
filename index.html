@@ -368,13 +368,25 @@ async function getText(url,opts={}){
 // #1 cause of Starlink stuck on "-". Timeout is generous (Starlink is ~1.8 MB).
 let _ctChain=Promise.resolve(), _ctLast=0, _ctCooldownUntil=0;
 function celestrakGet(url,opts={}){
+  const ck='sitrep.ct.'+url;
   const p=_ctChain.then(async()=>{
     const now=Date.now();
     const wait=Math.max(_ctCooldownUntil-now, 4000-(now-_ctLast), 0);
     if(wait>0) await new Promise(r=>setTimeout(r,wait));
     _ctLast=Date.now();
-    try{ return await getText(url,Object.assign({timeout:40000},opts)); }
-    catch(e){ _ctCooldownUntil=Date.now()+90000; throw e; }  // back off after a failure
+    try{
+      const txt=await getText(url,Object.assign({timeout:40000},opts));
+      // cache the last-good TLE — TLEs stay accurate for days, and SGP4 always
+      // propagates to "now", so a cached set still gives current positions if
+      // the feed is down (or on a cold reload before the first fetch lands).
+      try{ localStorage.setItem(ck,txt); }catch(e){}
+      return txt;
+    }catch(e){
+      _ctCooldownUntil=Date.now()+90000;                    // back off after a failure
+      let cached=null; try{ cached=localStorage.getItem(ck); }catch(_){}
+      if(cached){ console.warn('[celestrak] feed down — using cached',url); return cached; }
+      throw e;
+    }
   });
   _ctChain=p.catch(()=>{});   // keep the queue moving even if one request fails
   return p;
@@ -903,7 +915,8 @@ defLayer({
         return {type:'Feature',geometry:f.geometry,properties:{_kind:'gdacs',
           _icon:GDACS_ICON[p.eventtype]||'ico-disaster',
           _col:LVL[p.alertlevel]||'#ffb454',
-          name:p.name||TYPE[p.eventtype]||'event',type:TYPE[p.eventtype]||p.eventtype,
+          name:p.name||TYPE[p.eventtype]||'event',eventname:p.eventname||'',
+          type:TYPE[p.eventtype]||p.eventtype,
           level:p.alertlevel,country:p.country||'',
           sev:(p.severitydata&&p.severitydata.severitytext)||''}};
       })};
@@ -1529,6 +1542,7 @@ async function sitrepTick(){
   const openBtn=(url,lbl)=>`<button class="act" data-act="open" data-url="${escapeHtml(url)}">${lbl||'OPEN'}</button>`;
   const dist=f=>fmtMi(havKm(lat,lon,f.geometry.coordinates[1],f.geometry.coordinates[0]));
   const cut=(s,n)=>escapeHtml(String(s==null?'':s).trim().slice(0,n));   // concise, no "…"
+  const gName=p=>p.eventname||p.name||p.type||'event';   // clean GDACS storm name (e.g. "BAVI-26" not "Tropical Cyclone BAVI-26")
   const SWPC='https://www.swpc.noaa.gov/', SPCU='https://www.spc.noaa.gov/products/outlook/day1otlk.html';
 
   // -- ANOMALIES in view (+ global space weather). No header line: the
@@ -1546,7 +1560,7 @@ async function sitrepTick(){
   if(gRed.length){ const nr=nearView('src-gdacs',b,lat,lon);
     anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',
       gRed.length+' red/orange in view',
-      nr?(cut(nr.f.properties.name||nr.f.properties.type,15)+' · '+fmtMi(nr.km)):'GDACS multi-hazard',
+      nr?(cut(gName(nr.f.properties),15)+' · '+fmtMi(nr.km)):'GDACS multi-hazard',
       nr?flyBtn(nr.f):'']); }
   const nws=nwsInView(b);
   if(nws.length){
@@ -1575,7 +1589,7 @@ async function sitrepTick(){
     const info=(raw&&!/^magnitude 0\b/i.test(raw))?raw:((pr.type||'disaster')+' · '+(pr.level||'')+' alert');
     const more=worldRed.length>1?' +'+(worldRed.length-1):'';
     anom.push(['danger','🌀','DISASTER · WORLDWIDE',cut(info,26),
-      cut(pr.name||pr.type,14)+' · '+dist(nr)+more,flyBtn(nr)]); }
+      cut(gName(pr),16)+' · '+dist(nr)+more,flyBtn(nr)]); }
   const nwsInSet=new Set(nwsInView(b));
   const worldNws=featsIn('src-nws').filter(f=>/Extreme/i.test(f.properties.severity)&&!nwsInSet.has(f));
   if(worldNws.length) anom.push(['danger','⚠','EXTREME WX · OFF-MAP',cut(worldNws[0].properties.event,24),
@@ -1644,7 +1658,7 @@ async function sitrepTick(){
     fmtMi(ne.km)+' · NASA EONET',
     openBtn(ne.f.properties.link||('https://www.google.com/search?q='+encodeURIComponent(String(ne.f.properties.title||'natural event'))),'OPEN'));
   const nd=nearView('src-gdacs',b,lat,lon);
-  if(nd&&!gRed.includes(nd.f)) row('','🌀',cut((nd.f.properties.type||'DISASTER').toUpperCase(),18),cut(nd.f.properties.name,24),
+  if(nd&&!gRed.includes(nd.f)) row('','🌀',cut((nd.f.properties.type||'DISASTER').toUpperCase(),18),cut(gName(nd.f.properties),24),
     fmtMi(nd.km)+' · '+(nd.f.properties.level||'')+(nd.f.properties.country?' · '+cut(nd.f.properties.country,10):''),flyBtn(nd.f));
 
   // -- WORLD NEWS: conflict/disaster/politics/etc. (not map-scoped) — Wikipedia.
