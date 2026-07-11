@@ -291,13 +291,17 @@
     .maplibregl-ctrl-bottom-right{bottom:calc(var(--navh) + 4px + var(--sa-b))}
     /* map is full-width on mobile; keep the button above the bottom nav */
     #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(var(--navh) + var(--sa-b) + 14px)}
-    /* canifly chart on the phone/iPad sheet: the pane sizes to its CONTENT
-       (chart + settings) and sits at the foot of the sheet, so the SITREP cards
-       fill every pixel above it — right down to the chart, no dead band. Turning
-       off the size container here makes the grid's cq units fall back to the
-       viewport (svh/svw) instead of the pane height, so the chart has a
-       deterministic size that doesn't depend on the pane it's sizing. The px
-       caps in the grid rules keep the cells from ballooning on a wide iPad. */
+    /* Mobile/iPad sheet flows top-down: the cards size to their CONTENT and the
+       chart sits DIRECTLY BELOW them — so the SITREP always runs right into the
+       chart with no dead band, on a near-empty rural view or a packed-city one.
+       (flex:0 1 auto = hug content, but shrink + scroll internally when the cards
+       overflow so the chart stays visible.) Any slack falls at the very bottom. */
+    #sit-body{flex:0 1 auto}
+    /* the chart pane sizes to its CONTENT (chart + settings). Turning off the
+       size container here makes the grid's cq units fall back to the viewport
+       (svh/svw) instead of the pane height, so the chart has a deterministic size
+       that doesn't depend on the pane it's sizing; the px caps in the grid rules
+       keep the cells from ballooning on a wide iPad. */
     #fly-pane{flex:0 0 auto;height:auto;container-type:normal}
   }
 </style>
@@ -786,7 +790,11 @@ defLayer({
       getJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:15000}).catch(()=>null),
       getJSON(q('Stadiums','NAME'),{timeout:15000}).catch(()=>null)]);
     const feats=[];
-    const push=(geom,props)=>{ if(geom) feats.push({type:'Feature',geometry:geom,properties:props}); };
+    // stamp a representative lon/lat on each feature so its popup can link out to
+    // a sectional chart centred on the zone
+    const push=(geom,props)=>{ if(!geom) return;
+      const pt=polyPt({geometry:geom}); if(pt){ props.clon=+pt[0].toFixed(4); props.clat=+pt[1].toFixed(4); }
+      feats.push({type:'Feature',geometry:geom,properties:props}); };
     // controlled airspace around airports (advisory, aeronautical blue/magenta)
     const CTRL={B:'#5b8def',C:'#c06ad0',D:'#5b8def'};
     ((cls&&cls.features)||[]).forEach(f=>{ const p=f.properties||{},cl=p.CLASS;
@@ -824,7 +832,8 @@ defLayer({
     return `<h4${hard?' style="color:var(--danger)"':''}>${T[key]||'▢ AIRSPACE'}</h4>`
       +`<div class="kv"><span>name</span>${escapeHtml(String(p.name||'—').slice(0,60))}</div>`
       +(hasAlt?`<div class="kv"><span>alt</span>${escapeHtml(String(p.lo||'sfc'))} – ${escapeHtml(String(p.hi||'—'))}</div>`:'')
-      +`<div class="kv"><span>src</span>FAA · ${note}</div>`;
+      +`<div class="kv"><span>src</span>FAA · ${note}</div>`
+      +(p.clat!=null?`<div class="lnk"><a target="_blank" rel="noopener" href="https://skyvector.com/?ll=${p.clat},${p.clon}&chart=301&zoom=2">view on sectional chart ↗</a></div>`:'');
   }
 });
 
@@ -847,18 +856,19 @@ defLayer({
     const url='https://services1.arcgis.com/fBc8EJBxQRMcHlei/ArcGIS/rest/services/NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/FeatureServer/2/query'
       +`?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326`
       +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&maxAllowableOffset=${off.toFixed(5)}`
-      +'&outFields=UNIT_NAME,UNIT_TYPE&f=geojson';
+      +'&outFields=UNIT_NAME,UNIT_TYPE,UNIT_CODE&f=geojson';
     const j=await getJSON(url,{timeout:15000});
     const feats=[];
     (j.features||[]).forEach(f=>{ if(!f.geometry) return; const p=f.properties||{};
       feats.push({type:'Feature',geometry:f.geometry,properties:{_kind:'nps',
-        name:p.UNIT_NAME||'',utype:p.UNIT_TYPE||'',_col:'#3fa46a'}}); });
+        name:p.UNIT_NAME||'',utype:p.UNIT_TYPE||'',code:(p.UNIT_CODE||'').toLowerCase(),_col:'#3fa46a'}}); });
     return {type:'FeatureCollection',features:feats};
   },
   popup:p=>`<h4 style="color:#3fa46a">🌲 ${escapeHtml(String(p.name||'NPS LAND').toUpperCase())}</h4>
     <div class="kv"><span>type</span>${escapeHtml(String(p.utype||'NPS unit'))}</div>
     <div class="kv"><span>drone</span>launch / land / operate prohibited</div>
     <div class="kv"><span>src</span>National Park Service</div>`
+    +(p.code?`<div class="lnk"><a target="_blank" rel="noopener" href="https://www.nps.gov/${escapeHtml(p.code)}/">nps.gov page ↗</a></div>`:'')
 });
 
 /* =====================================================================
@@ -1302,6 +1312,20 @@ const CATS=[
   {src:'src-mil', hazard:false, icon:'🎖', mil:true, cls:()=>'alert',
    head:f=>cut(f.properties.flight||f.properties.hex||'?',10),
    sub:f=>escapeHtml(f.properties.desc||f.properties.type||'military'), detail:ALT},
+  // FAA airspace RESTRICTIONS — each in-view zone is a distance-sorted, tappable
+  // card (tap flies the map to it). Controlled airspace (Class B/C/D/E) is
+  // excluded: the chart's FAA ceiling already covers it and it would flood the list.
+  {src:'src-airspace', hazard:true, filter:f=>f.properties.sev!=='ctrl',
+   icon:f=>f.properties.sev==='hard'?'⛔':'⚠',
+   cls:f=>f.properties.sev==='hard'?'danger':'alert',
+   head:f=>({DEF:'DEFENSE AIRSPACE',NSUFR:'SECURITY NO-FLY',P:'PROHIBITED AREA',R:'RESTRICTED AREA',
+     MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA',STDM:'STADIUM TFR'}[f.properties.cls]||'AIRSPACE'),
+   sub:f=>cut(f.properties.name||'—',26),
+   detail:f=>f.properties.sev==='hard'?'drones prohibited':f.properties.cls==='STDM'?'during events':'verify NOTAMs'},
+  // National Park Service lands — a drone no-fly (can't launch / land / operate).
+  {src:'src-nps', hazard:true, icon:'🌲', cls:()=>'danger',
+   head:f=>cut(f.properties.name||'NPS LAND',20),
+   sub:()=>'drones prohibited', detail:f=>cut(f.properties.utype||'NPS unit',18)},
 ];
 // is a point/polygon feature inside the given view bounds? For polygons: any
 // vertex in view, OR the polygon CONTAINS the view centre — without the second
@@ -1396,29 +1420,6 @@ async function sitrepTick(){
     'HF / GPS / grid impact',openBtn(SWPC,'SWPC'),true]);
   if(XRAY&&/^[MX]/.test(XRAY)) general.push([/^X/.test(XRAY)?'danger':'alert','☀','SOLAR FLARE '+XRAY,'GOES X-ray · '+(/^X/.test(XRAY)?'major':'moderate'),
     'HF radio blackout risk',openBtn(SWPC,'SWPC'),true]);
-  // FAA AIRSPACE RESTRICTIONS under the crosshair (from the map layer): hard
-  // no-fly (defense / security / prohibited) as red cards; schedule/event
-  // advisories (restricted / MOA / warning / alert / stadium) as amber. Controlled
-  // airspace (Class B/C/D) isn't carded — the chart's FAA ceiling already covers it.
-  const AT={DEF:'DEFENSE AIRSPACE',NSUFR:'SECURITY NO-FLY',P:'PROHIBITED AREA',
-    R:'RESTRICTED AREA',MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA',STDM:'STADIUM TFR'};
-  const aspHit=[], aspSeen=new Set();
-  featsIn('src-airspace').forEach(f=>{
-    const p=f.properties; if(p.sev==='ctrl') return;
-    const key=p.code+'|'+p.name; if(aspSeen.has(key)) return;
-    if(!pointInFeature(f,lon,lat)) return;
-    aspSeen.add(key); aspHit.push(p);
-  });
-  aspHit.sort((a,z)=>(a.sev==='hard'?0:1)-(z.sev==='hard'?0:1));
-  aspHit.slice(0,4).forEach(p=>{
-    const sub=p.sev==='hard'?'drones prohibited':p.cls==='STDM'?'no-fly during events':'may be active — verify NOTAMs';
-    general.push([p.sev==='hard'?'danger':'alert', p.sev==='hard'?'⛔':'⚠',
-      AT[p.cls]||'AIRSPACE', cut(p.name||'—',22), sub, '', true]);
-  });
-  // NATIONAL PARK SERVICE land under the crosshair — a hard drone no-fly.
-  const npsHit=featsIn('src-nps').find(f=>pointInFeature(f,lon,lat));
-  if(npsHit) general.push(['danger','🌲', cut(npsHit.properties.name||'NPS LAND',20),
-    'drones prohibited', cut(npsHit.properties.utype||'NPS unit',24), '', true]);
 
   // -- INDIVIDUAL item cards: one per in-view feature (planes, warnings,
   //    emergencies), all interleaved. HAZARDS OUTRANK ROUTINE TRAFFIC: a
@@ -1432,15 +1433,19 @@ async function sitrepTick(){
     const pt=polyPt(f); if(!pt) return;
     const cls=cfg.cls?cfg.cls(f):'';
     const tier=cfg.hazard?(cls==='danger'?0:1):2;
-    items.push({cfg,f,pt,cls,tier,km:havKm(lat,lon,pt[1],pt[0])});
+    // an area you're standing INSIDE sorts to the top (distance 0) and reads
+    // "overhead" instead of a distance to some far corner of its polygon
+    const inside=f.geometry&&f.geometry.type!=='Point'&&pointInFeature(f,lon,lat);
+    items.push({cfg,f,pt,cls,tier,inside,km:inside?0:havKm(lat,lon,pt[1],pt[0])});
   }));
   items.sort((a,z)=>a.tier-z.tier||a.km-z.km);
   const ITEM_CAP=14;
-  items.slice(0,ITEM_CAP).forEach(({cfg,f,pt,cls})=>{
+  items.slice(0,ITEM_CAP).forEach(({cfg,f,pt,cls,inside})=>{
     const det=cfg.detail?cfg.detail(f):'';
-    cards.push([cls, cfg.icon,
+    const ic=typeof cfg.icon==='function'?cfg.icon(f):cfg.icon;
+    cards.push([cls, ic,
       cfg.head(f), (cfg.sub?cfg.sub(f):'')||'—',
-      dirMi(pt[1],pt[0])+(det?' · '+det:''),
+      (inside?'overhead':dirMi(pt[1],pt[0]))+(det?' · '+det:''),
       llBtn(pt[0],pt[1]), cfg.hazard]);
   });
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
