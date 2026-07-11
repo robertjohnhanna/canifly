@@ -246,7 +246,7 @@
 <!-- objects panel -->
 <div id="layers" class="panel">
   <div class="sheet-grip" data-close="layers"></div>
-  <div id="obj-head">◧ OBJECTS <span class="brand">SITREP</span></div>
+  <div id="obj-head">◧ OBJECTS <span class="badge" id="utc-badge" title="UTC" style="margin-left:auto"><b id="utc">--:--</b></span></div>
   <div id="layers-scroll">
     <div class="sec-h">Aircraft</div><div id="grp-air"></div>
     <div class="sec-h">Maritime &amp; rail</div><div id="grp-surface"></div>
@@ -261,7 +261,6 @@
   <div class="sheet-grip" data-close="sitrep"></div>
   <div id="sit-head">
     <span class="title" id="sit-title">◈ SITREP</span>
-    <span class="badge" id="utc-badge" title="UTC"><b id="utc">--:--</b></span>
     <span class="loc" id="sit-loc">LOCATING…</span>
   </div>
   <div id="sit-body">
@@ -996,10 +995,12 @@ async function runLayer(cfg){
 
 function scheduleLayer(cfg){
   const st=LAYER_STATE[cfg.id];
-  runLayer(cfg);
+  runLayer(cfg);                               // initial pull (numbers show even while hidden)
   if(cfg.refresh>0){
     if(st.timer) clearInterval(st.timer);
-    st.timer=setInterval(()=>{ if(st.on) runLayer(cfg); },cfg.refresh*1000);
+    // keep refreshing while the layer is visible, or always for bg feeds that
+    // power the SITREP; a hidden layer keeps its loaded count without re-polling
+    st.timer=setInterval(()=>{ if(st.on||cfg.bg) runLayer(cfg); },cfg.refresh*1000);
   }
 }
 
@@ -1025,7 +1026,7 @@ function buildLayerPanel(){
       const vis=st.on?'visible':'none';
       gl.setLayoutProperty('ly-'+cfg.id,'visibility',vis);
       if(gl.getLayer('lyl-'+cfg.id)) gl.setLayoutProperty('lyl-'+cfg.id,'visibility',vis);
-      if(st.on&&!st.started){ st.started=true; scheduleLayer(cfg); }
+      if(st.on) runLayer(cfg);   // refresh immediately on show (data already pulled on load)
     });
   });
 }
@@ -1310,9 +1311,11 @@ async function sitrepTick(){
   // -- ANOMALIES in view (+ global space weather). No header line: the
   //    "SITREP" title in the bar turns red when anything is flagged. --
   const anom=[];
-  const sosN=countView('src-sos',b);
-  if(sosN){ const n=nearView('src-sos',b,lat,lon);
-    anom.push(['danger','🚨','AIRCRAFT EMERGENCY',sosN+' squawking 7500/7600/7700'+(n?' · '+fmtMi(n.km):''),n?flyBtn(n.f):'']); }
+  // aircraft emergencies are always surfaced WORLDWIDE (they're rare + critical),
+  // not just when one is in the map area
+  const sosAll=featsIn('src-sos');
+  if(sosAll.length){ const n=nearestIn('src-sos',lat,lon);
+    anom.push(['danger','🚨','AIRCRAFT EMERGENCY',sosAll.length+' squawking 7500/7600/7700'+(n?' · '+fmtMi(n.km):''),n?flyBtn(n.f):'']); }
   const gRed=featsIn('src-gdacs').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(f.properties.level==='Red'||f.properties.level==='Orange'));
   if(gRed.length){ const nr=nearView('src-gdacs',b,lat,lon);
     anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',gRed.length+' red/orange in view'+(nr?' · '+fmtMi(nr.km):''),nr?flyBtn(nr.f):'']); }
@@ -1627,13 +1630,10 @@ gl.on('load',()=>{
   registerIcons();
   buildLayerPanel();
   bindLayerPopups();
-  LAYERS.forEach(cfg=>{ if(!cfg.defaultOff) scheduleLayer(cfg); });
-  // background feeds for anomaly detection (loaded even while hidden)
-  LAYERS.filter(c=>c.bg).forEach(cfg=>{
-    const st=LAYER_STATE[cfg.id]; if(st.started) return; st.started=true;
-    runLayer(cfg);
-    if(cfg.refresh>0) setInterval(()=>runLayer(cfg),cfg.refresh*1000);
-  });
+  // Pull EVERY layer once on load so its count is available immediately, even
+  // while hidden. Visible + bg layers keep refreshing; hidden ones hold their
+  // loaded number until toggled on (see scheduleLayer).
+  LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; scheduleLayer(cfg); });
   loadEmgPool(); // warm the emergency-broadcast pool so the first fix tunes fast
   loadKp();   setInterval(loadKp,120000);   // space weather: planetary Kp
   loadXray(); setInterval(loadXray,120000); // space weather: GOES X-ray flare
