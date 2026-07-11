@@ -53,6 +53,9 @@
     --sa-t:env(safe-area-inset-top,0px); --sa-b:env(safe-area-inset-bottom,0px);
     --sa-l:env(safe-area-inset-left,0px); --sa-r:env(safe-area-inset-right,0px);
     --topbar-h:var(--sa-t);
+    /* mobile bottom-nav height. Text-only tabs (no icons) → a slim bar, so the
+       SITREP sheet gets the maximum vertical room. */
+    --navh:42px;
     /* symmetric top/bottom inset so the gaps match even with a home-indicator
        safe area (which is only on the bottom) */
     --inset:calc(max(var(--sa-t),var(--sa-b)) + 8px);
@@ -97,7 +100,6 @@
   #fly-pane{flex:0 0 auto;height:clamp(300px,42vh,460px);
     border-top:1px solid var(--line);background:#000;display:flex;justify-content:center}
   #fly-frame{width:100%;height:100%;border:0;display:block;background:#000;margin:0 auto}
-  .sheet-grip{display:none}
 
   /* ---------- emergency broadcast footer (NOAA weather radio, auto-tuned) ---------- */
   #emg{padding:10px 12px calc(10px + var(--sa-b)/2);border-top:1px solid var(--line);
@@ -199,14 +201,14 @@
   #mnav{display:none}
   @media (max-width:1000px){
     /* map stops at the nav bar so no tiles bleed under it */
-    #map{bottom:calc(54px + var(--sa-b))}
+    #map{bottom:calc(var(--navh) + var(--sa-b))}
     #mnav{position:absolute;left:0;right:0;bottom:0;z-index:30;display:flex;
-      height:calc(54px + var(--sa-b));padding:0 var(--sa-r) var(--sa-b) var(--sa-l);
+      height:calc(var(--navh) + var(--sa-b));padding:0 var(--sa-r) var(--sa-b) var(--sa-l);
       background:#000;border-top:1px solid var(--line)}
+    /* text-only tabs (icons dropped) — a single slim line to reclaim sheet space */
     #mnav button{flex:1;background:none;border:none;color:var(--ink-dim);
-      font-size:13px;letter-spacing:.6px;display:flex;flex-direction:column;
-      align-items:center;justify-content:center;gap:3px;min-height:44px}
-    #mnav button .ic{font-size:18px;line-height:1}
+      font-size:12px;letter-spacing:1px;display:flex;
+      align-items:center;justify-content:center}
     #mnav button.active{color:var(--accent)}
     /* Selected panel fills the whole screen (down to the nav bar) and scrolls
        internally. It's opaque and, when closed, fully HIDDEN (visibility) so a
@@ -215,7 +217,7 @@
        Safari tab, where the web content already sits below Safari's chrome — a
        hard 54px fallback here was what made the header look absurdly tall). */
     .panel{left:0!important;right:0!important;top:0!important;width:auto!important;
-      bottom:calc(54px + var(--sa-b))!important;max-height:none!important;z-index:20;
+      bottom:calc(var(--navh) + var(--sa-b))!important;max-height:none!important;z-index:20;
       padding-top:var(--sa-t)!important;background:var(--bg);
       backdrop-filter:none;-webkit-backdrop-filter:none;
       border-radius:0;border:none;visibility:hidden;
@@ -224,12 +226,9 @@
       box-shadow:0 -12px 40px #000a}
     .panel.open{transform:translateY(0);visibility:visible;
       transition:transform .28s cubic-bezier(.32,.72,.35,1),visibility 0s}
-    .sheet-grip{display:block;flex:0 0 auto;padding:8px 0 2px;cursor:grab}
-    .sheet-grip::before{content:"";display:block;width:38px;height:4px;border-radius:2px;
-      background:#2a3a4d;margin:0 auto}
-    .maplibregl-ctrl-bottom-right{bottom:calc(58px + var(--sa-b))}
+    .maplibregl-ctrl-bottom-right{bottom:calc(var(--navh) + 4px + var(--sa-b))}
     /* map is full-width on mobile; keep the button above the bottom nav */
-    #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(54px + var(--sa-b) + 14px)}
+    #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(var(--navh) + var(--sa-b) + 14px)}
     /* canifly's built-in "rotate to portrait" guard fires on a short (≤480px),
        landscape-ish, touch viewport — which the embedded iframe looked like on a
        phone (nearly square). Keep the iframe TALLER than 480px so that guard
@@ -252,7 +251,6 @@
 <!-- SITREP briefing panel (right) — cards, then canifly, then the auto-tuned
      emergency radio. The only panel now; the map fills everything else. -->
 <div id="sitrep" class="panel">
-  <div class="sheet-grip" data-close="sitrep"></div>
   <div id="sit-head">
     <span class="title" id="sit-title">◈ SITREP</span>
     <span id="refresh-badge" title="time to next data refresh"><b id="refresh-count">30</b>s to update</span>
@@ -282,8 +280,8 @@
 
 <!-- mobile bottom navigation -->
 <div id="mnav">
-  <button data-p="" class="active"><span class="ic">🗺</span>MAP</button>
-  <button data-p="sitrep"><span class="ic">◈</span>SITREP</button>
+  <button data-p="" class="active">MAP</button>
+  <button data-p="sitrep">SITREP</button>
 </div>
 
 <div id="toast"></div>
@@ -452,12 +450,17 @@ const gl = new maplibregl.Map({
         attribution:'© OpenStreetMap · © CARTO' },
       // NEXRAD base-reflectivity mosaic (~1 km, latest) — Iowa State Mesonet,
       // keyless. Refreshed on the 30s pulse via refreshRadar(). Sits above the
-      // basemap, below the aircraft/warning layers (added later).
-      radar:{ type:'raster', tileSize:256,
+      // basemap, below the aircraft/warning layers (added later). maxzoom caps
+      // the TILE fetch at the mosaic's native detail (~z8); it does NOT cap the
+      // map's zoom — you can still zoom all the way in, and beyond z8 MapLibre
+      // bilinearly upsamples that tile so the radar stays smooth instead of
+      // showing the blocky server-upscaled tiles you'd get by fetching deeper.
+      radar:{ type:'raster', tileSize:256, maxzoom:8,
         tiles:[RADAR_TILE], attribution:'NEXRAD · Iowa State Mesonet' }
     },
     layers:[{id:'carto',type:'raster',source:'carto'},
-      {id:'radar',type:'raster',source:'radar',paint:{'raster-opacity':0.5}}]
+      {id:'radar',type:'raster',source:'radar',
+        paint:{'raster-opacity':0.5,'raster-resampling':'linear'}}]
   },
   center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a location fix lands
   renderWorldCopies:true, attributionControl:false
@@ -1406,8 +1409,6 @@ function openSheet(which){
   if(which==='sitrep') ensureFly();   // mobile: load canifly when the SITREP sheet opens
 }
 mnavBtns.forEach(b=>b.addEventListener('click',()=>openSheet(b.dataset.p)));
-document.querySelectorAll('.sheet-grip').forEach(gr=>
-  gr.addEventListener('click',()=>openSheet('')));
 // tapping the map closes any open sheet (mobile only; harmless on desktop)
 gl.on('dragstart',()=>{ if(MQ_MOBILE.matches) openSheet(''); });
 
