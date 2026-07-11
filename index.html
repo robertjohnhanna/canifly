@@ -103,6 +103,9 @@
     border-bottom:1px solid var(--line);font-size:13px;letter-spacing:2px;color:var(--accent);
     font-weight:700}
   #obj-head .brand{color:var(--ink-dim);letter-spacing:.5px;font-weight:400;margin-left:auto;font-size:13px}
+  /* live local time + timezone, right-justified on the DATA title line */
+  #data-clock{margin-left:auto;color:var(--ink-dim);font-weight:400;letter-spacing:.5px;
+    font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
   /* canifly preflight tool sits ABOVE the layer list. Bounded height (its own UI
      is one-screen) so the layer sections stay reachable below it; negative
      margins bleed it to the panel edges past the scroll padding. */
@@ -312,7 +315,7 @@
 <!-- objects panel -->
 <div id="layers" class="panel">
   <div class="sheet-grip" data-close="layers"></div>
-  <div id="obj-head">◧ DATA</div>
+  <div id="obj-head">◧ DATA <span id="data-clock" title="local time at your location"></span></div>
   <div id="layers-scroll">
     <!-- canifly drone-preflight tool, embedded live from its own repo
          (github.io/canifly) ABOVE the layer list. Loaded when the panel is first
@@ -1257,7 +1260,15 @@ function refreshDueLayers(){
     if(pulseCount%everyN===0) runLayer(cfg);
   });
 }
+// live local-time clock (with timezone abbreviation) in the DATA panel header —
+// USER.tz once the location resolves, browser zone until then
+function updateClock(){
+  const el=$('#data-clock'); if(!el) return;
+  el.textContent=new Date().toLocaleTimeString([],
+    Object.assign({hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'},tzOpt()));
+}
 function refreshTick(){
+  updateClock();
   const el=$('#refresh-count');
   const elapsed=Math.floor((Date.now()-refreshBase)/1000);
   if(elapsed>=REFRESH_S){ refreshBase=Date.now(); refreshDueLayers(); if(el) el.textContent=REFRESH_S; }
