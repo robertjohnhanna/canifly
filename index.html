@@ -1704,7 +1704,7 @@ function catItems(cfg,b){
 function catListHTML(srcId){
   const cfg=catOf(srcId); if(!cfg) return '<div class="sit-empty">NONE</div>';
   const c=gl.getCenter(), b=viewBounds();
-  const rLat=USER.lat!=null?USER.lat:c.lat, rLon=USER.lon!=null?USER.lon:c.lng;
+  const rLat=c.lat, rLon=c.lng;   // crosshair — same reference as the card's "nearest", so row 1 = the card
   const rows=catItems(cfg,b).map(f=>{const pt=polyPt(f);
       return pt?{f,pt,km:havKm(rLat,rLon,pt[1],pt[0])}:null;})
     .filter(Boolean).sort((x,y)=> cfg.rank ? (cfg.rank(y.f)-cfg.rank(x.f))||(x.km-y.km) : x.km-y.km);
@@ -1734,11 +1734,17 @@ async function sitrepTick(){
   const llBtn=(lo,la,lbl)=>isFinite(lo)&&isFinite(la)?`<button class="act" data-act="fly" data-ll="${lo+','+la}">${lbl||'VIEW'}</button>`:'';
   const flyBtn=f=>llBtn(f.geometry.coordinates[0],f.geometry.coordinates[1]);
   const openBtn=(url,lbl)=>`<button class="act" data-act="open" data-url="${escapeHtml(url)}">${lbl||'OPEN'}</button>`;
-  // Distance strings are "from me": bearing + range from the user's location
-  // (falling back to map center before a fix), e.g. "NW 180 mi".
-  const refLat=USER.lat!=null?USER.lat:lat, refLon=USER.lon!=null?USER.lon:lon;
+  // The SITREP describes the CROSSHAIR (map centre) — the location chip already
+  // reverse-geocodes it — so "nearest", ordering, distance and direction are all
+  // measured FROM THE CROSSHAIR. It sits on you by default and after the ME
+  // button, so it reads as "from me" until you deliberately pan elsewhere; then
+  // it re-bases to the point you're inspecting (e.g. "the nearest quake to
+  // there, N of there"). Personal-safety cards below (low overflight) and the
+  // emergency-radio label stay measured from your GPS.
+  const refLat=lat, refLon=lon;
   const dirMi=(la,lo)=>compass(bearing(refLat,refLon,la,lo))+' '+fmtMi(havKm(refLat,refLon,la,lo));
-  const dist=f=>dirMi(f.geometry.coordinates[1],f.geometry.coordinates[0]);
+  // bearing + range specifically from the USER (for the near-me safety cards)
+  const meMi=(la,lo)=>compass(bearing(USER.lat,USER.lon,la,lo))+' '+fmtMi(havKm(USER.lat,USER.lon,la,lo));
   const SWPC='https://www.swpc.noaa.gov/', SPCU='https://www.spc.noaa.gov/products/outlook/day1otlk.html';
 
   // -- CARDS: one uniform card per category, plus a few special safety cards.
@@ -1774,10 +1780,10 @@ async function sitrepTick(){
       low.push({f,km,agl:a-(USER.elevFt||0)});
     }));
     if(low.length){ low.sort((x,y)=>x.agl-y.agl); const lo=low[0];
-      if(lo.agl<1000){ const p=lo.f.properties;
+      if(lo.agl<1000){ const p=lo.f.properties, g=lo.f.geometry.coordinates;
         cards.push([lo.agl<500?'danger':'alert','🛩️','LOW OVERFLIGHT',
           low.length+' within 1 mi · '+cut(p.flight||p.type||'aircraft',10),
-          dist(lo.f)+' · '+Math.max(0,Math.round(lo.agl))+U(' ft')+' AGL',flyBtn(lo.f),true]); }
+          meMi(g[1],g[0])+' · '+Math.max(0,Math.round(lo.agl))+U(' ft')+' AGL',flyBtn(lo.f),true]); }
     }
   }
   // hazard categories: emergencies, weather warnings, quakes, natural events, disasters
