@@ -88,24 +88,21 @@
   #refresh-badge{margin-left:auto;color:var(--ink-dim);font-weight:400;letter-spacing:.5px;
     font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto}
   #refresh-badge b{color:var(--ink)}
-  /* ---------- canifly — the drone-preflight chart, fully integrated ----------
+  /* ---------- canifly — the static drone-preflight chart ----------
      Ported from the canifly repo (which stays standalone and untouched): just
-     the flyability grid and its flip info card — no title, coordinates or
-     refresh line. The pane sits below the cards at half the panel height; it's
-     a SIZE CONTAINER, so every font and pad below is in cq units and the chart
-     scales itself to whatever box it gets — desktop dock, iPad, iPhone sheet. */
-  #fly-pane{flex:0 0 50%;min-height:0;border-top:1px solid var(--line);background:#000;
-    container-type:size;--fti:min(2.4cqh,3.3cqw,12px);
-    /* a bottom-anchored column: the chart (flip box) then the settings box, both
-       hugging the foot of the panel; any slack falls as blank space ABOVE the
-       chart, between it and the SITREP cards */
-    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+     the flyability grid + the settings box, no title/coords/refresh line and no
+     flip. The pane is sized to its CONTENT (the chart never changes size) and
+     pinned to the BOTTOM of the panel; the SITREP cards above fill down to its
+     top edge. cq units fall back to the viewport (container-type:normal) so the
+     chart has a deterministic size independent of the pane it lives in; the px
+     caps in the grid rules keep the cells sane from an iPhone to a wide iPad. */
+  #fly-pane{flex:0 0 auto;min-height:0;border-top:1px solid var(--line);background:#000;
+    container-type:normal;--fti:min(2.4cqh,3.3cqw,12px);
+    display:flex;flex-direction:column;align-items:center;
     gap:min(1.6cqh,10px);padding:min(2cqh,12px) min(3cqw,14px)}
-  /* the board is the flip box: the grid fixes its height; the info card overlays
-     it (inset:0), so flipping never changes the box size. Cells scale with cqh so
-     the grid self-fits whatever height is left after the settings box. */
+  /* the board holds the grid (sized to its content) */
   #fly-pane .board{position:relative;width:100%;max-width:560px;flex:0 1 auto;min-height:0}
-  #fly-pane .grid{width:100%;border:1px solid var(--line);border-radius:12px;cursor:pointer;
+  #fly-pane .grid{width:100%;border:1px solid var(--line);border-radius:12px;
     padding:min(1.4cqh,8px) min(2cqw,10px);display:grid;
     grid-template-columns:minmax(0,1.15fr) repeat(4,minmax(0,1fr));   /* labels + NOW..+3h */
     align-content:center;font-variant-numeric:tabular-nums}
@@ -136,32 +133,10 @@
   #fly-pane .sk{display:block;border-radius:4px;background:var(--ink-dim);opacity:.22;
     width:58%;height:min(3.5cqh,4.6cqw,15px);margin:0 auto;animation:flypulse 1.6s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){#fly-pane .sk{animation:none}}
-  /* the flip info card: a compact 2-column TABLE of gate codes → thresholds.
-     Overlays the grid (inset:0), same box, so the flip never resizes anything. */
-  #fly-pane .infobox{position:absolute;inset:0;z-index:1;overflow:hidden;cursor:default;
-    border:1px solid var(--line);border-radius:12px;background:#000;line-height:1.15;
-    padding:min(2cqh,3cqw) min(3cqh,4.5cqw);text-align:left;display:flex;flex-direction:column}
-  /* code | value, vertically centred; each row (.itr) is a link (display:contents
-     so its two cells sit directly in the grid). Code = the link (green); value
-     right-aligned; value ambers when that feed degraded. */
-  #fly-pane .itbl{margin:auto 0;width:100%;display:grid;grid-template-columns:auto 1fr;
-    align-content:center;row-gap:min(.7cqh,3px);column-gap:1.2em;font-size:var(--fti)}
-  #fly-pane .itr{display:contents;text-decoration:none}
-  #fly-pane .itc{font-weight:800;color:var(--ok);letter-spacing:.06em;white-space:nowrap;padding:.12em 0}
-  #fly-pane .itv{color:var(--ink);text-align:right;white-space:nowrap;letter-spacing:.02em;padding:.12em 0}
-  #fly-pane .itv.warn{color:var(--warn)}
-  @media(hover:hover){#fly-pane .itr:hover .itc{text-decoration:underline}}
-  #fly-pane .iwrap{margin:auto 0}
-  #fly-pane .ihead{font-weight:700;letter-spacing:.14em;font-size:var(--fti);color:var(--ink);
-    margin:min(1.4cqh,2cqw) 0 min(.5cqh,.7cqw)}
-  #fly-pane .ihead:first-child{margin-top:0}
+  /* settings-row base (used by the settings box below) */
   #fly-pane .irow{display:flex;justify-content:flex-start;align-items:baseline;gap:.6em;
     padding:.18em 0;font-size:var(--fti);min-width:0}
-  #fly-pane .irow .ic{font-weight:800;color:var(--danger);letter-spacing:.05em;white-space:nowrap}
   #fly-pane .irow .id{color:var(--ink);letter-spacing:.02em}
-  #fly-pane .irow .id.warn{color:var(--warn)}   /* that feed's last pull degraded */
-  #fly-pane .irow .isrc{font-weight:800;color:var(--ok);letter-spacing:.05em;
-    white-space:nowrap;text-decoration:none}
   /* the settings box — max wind + range, ± steppers — its OWN box just below the
      chart, both anchored to the foot of the panel. label left / value centre /
      buttons right. Sized like the info card so the two faces of the flip and this
@@ -301,16 +276,6 @@
     .maplibregl-ctrl-bottom-right{bottom:calc(var(--navh) + 4px + var(--sa-b))}
     /* map is full-width on mobile; keep the button above the bottom nav */
     #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(var(--navh) + var(--sa-b) + 14px)}
-    /* The sheet: cards fill from the top down to the chart; the chart (+ its
-       settings box) is a fixed-size cluster pinned to the BOTTOM of the page.
-       sit-body (flex:1 1 auto, from the base rule) grows to fill the gap between
-       the header and the chart and scrolls internally; the chart box is sized to
-       its own content (no slack). Few cards → the empty space sits between the
-       last card and the bottom-pinned chart, exactly as intended.
-       Turning off the size container makes the grid's cq units fall back to the
-       viewport (svh/svw) so the chart has a deterministic size independent of its
-       pane; the px caps in the grid rules keep cells from ballooning on iPad. */
-    #fly-pane{flex:0 0 auto;height:auto;container-type:normal}
   }
 </style>
 </head>
@@ -1787,7 +1752,6 @@ function flyTrafficRows(){
 const FLY={
   data:null,     // last good {lat,lon,aloft,kp,asp} — lat/lon = where it was fetched
   detail:null,   // computed render model (kept for tests/debug)
-  info:false,    // board flipped to the info card?
   precip:null,   // radar echo within RNG.mi? true / false / null (unknown → fail open)
   err:{om:false,kp:false,asp:false,radar:false},
 };
@@ -1887,7 +1851,7 @@ function flyComputeDetail(){
     grid:grid.map(g=>({n:g.n,maxFly:g.maxFly,grounded:g.grounded,reason:g.reason,reasonAlt:g.reasonAlt}))};
 }
 
-const FLY_GRID_ATTRS='class="grid" tabindex="0" title="Tap for limits &amp; data"';
+const FLY_GRID_ATTRS='class="grid"';
 function flyBoardHtml(b){
   const unit=u=>u?`<i class="gu">${u}</i>`:'';
   const cell=c=>`<span class="gc${c.st?' '+c.st:''}${c.rsn?' rsn':''}">${c.v==null?'':c.v}${unit(c.u)}</span>`;
@@ -1905,36 +1869,6 @@ function flySkeletonHtml(){
   const rows=ALTS.map(ft=>`<div class="grow"><span class="ga">${ft===0?'sfc':comma(ft)}${ft===ALTS[0]?'<i class="gu">ft</i>':''}</span>${sk}</div>`).join('');
   const gust=`<div class="grow ggust"><span class="ga">gust</span>${sk}</div>`;
   return `<div ${FLY_GRID_ATTRS}>${head}${rows}${gust}</div>`;
-}
-// The flip info card — a compact TABLE of the gate codes and their thresholds.
-// Each row is a LINK: the code (left) opens its data source; the value (right)
-// ambers when that feed's last pull degraded. No prose, no scroll.
-function flyInfoHtml(){
-  const hasLoc=FLY.data!=null;
-  const omUrl=hasLoc?aloftUrl(FLY.data.lat,FLY.data.lon):'https://open-meteo.com/';
-  const faaUrl=hasLoc?faaMapUrl(FLY.data.lat,FLY.data.lon):`https://www.arcgis.com/home/item.html?id=${FAA_ITEM}`;
-  const w=k=>FLY.err[k]?' warn':'';
-  const wac=['nearair','mil','sos'].some(id=>LAYER_STATE[id]&&LAYER_STATE[id].errored)?' warn':'';
-  const wasp=LAYER_STATE.airspace&&LAYER_STATE.airspace.errored?' warn':'';
-  const wnps=LAYER_STATE.nps&&LAYER_STATE.nps.errored?' warn':'';
-  const NEX='https://mesonet.agron.iastate.edu/GIS/', ADSB='https://airplanes.live/', NPS='https://www.nps.gov/';
-  // [code, threshold, source href, warn-class] — link rolled into the code.
-  const rows=[
-    ['faa', `laanc &middot; def &middot; ${SPEC.regFt} ft`, faaUrl, w('asp')],
-    ['wind',`&ge; ${LIM.wind} mph aloft`,      omUrl,  w('om')],
-    ['sky', `base &minus; ${SPEC.clrFt} ft`,   omUrl,  w('om')],
-    ['gust',`&ge; ${LIM.wind} mph sfc`,        omUrl,  w('om')],
-    ['vis', `&lt; ${SPEC.visSM} sm`,           omUrl,  w('om')],
-    ['pcpn',`radar in range`,                  NEX,    w('radar')],
-    ['kp',  `&ge; ${SPEC.kpMax}`,              KP_URL, w('kp')],
-    ['trfc',`air &lt; ${comma(WARN_AGL_FT)} ft`,ADSB,  wac],
-    ['proh',`prohibited`,                      faaUrl, wasp],
-    ['nsuf',`security zone`,                    faaUrl, wasp],
-    ['park',`nps land`,                        NPS,    wnps],
-  ];
-  const body=rows.map(([c,v,href,wc])=>
-    `<a class="itr" href="${href}" target="_blank" rel="noopener"><span class="itc">${c}</span><span class="itv${wc}">${v}</span></a>`).join('');
-  return `<div class="infobox" role="region" aria-label="Limits and data sources"><div class="itbl">${body}</div></div>`;
 }
 // The settings box — max wind + range — rendered into its own #fly-settings box
 // below the chart (no longer a face of the flip). Independent of feed data, so it
@@ -1955,11 +1889,8 @@ function flyRenderSettings(){ const s=$('#fly-settings'); if(s) s.innerHTML=flyS
 function flyRender(){
   const board=$('#fly-board'); if(!board) return;
   board.innerHTML=FLY.detail?flyBoardHtml(FLY.detail.board):flySkeletonHtml();
-  if(FLY.info) board.insertAdjacentHTML('beforeend',flyInfoHtml());
 }
 function flyPaint(){ FLY.detail=FLY.data?flyComputeDetail():null; flyRender(); }
-function flyShowInfo(){ FLY.info=true; flyRender(); }
-function flyShowChart(){ FLY.info=false; flyRender(); }
 
 // ---- settings ----
 // Max wind: ±1 mph, clamped 1–99, persisted. Pure local math → recompute + repaint.
@@ -1986,10 +1917,7 @@ function setRange(mi){
   clearTimeout(rngFetchTimer);
   rngFetchTimer=setTimeout(flyRefresh,700);
 }
-// One handler drives the flip. A stepper press adjusts its setting (never flips);
-// tapping a setting's value resets it. With the grid showing, a tap on it flips to
-// the info card; with the card showing, a tap anywhere outside the settings block
-// and links flips back.
+// Settings steppers: a ± press adjusts the setting; tapping a value resets it.
 document.addEventListener('click',e=>{
   const step=e.target.closest('#mw-minus,#mw-plus,#rng-minus,#rng-plus');
   if(step){
@@ -1998,19 +1926,12 @@ document.addEventListener('click',e=>{
     return;
   }
   const val=e.target.closest('#mw-val,#rng-val');
-  if(val){ if(val.id==='mw-val') setMaxWind(MW_DEFAULT); else setRange(RNG_DEFAULT); return; }
-  if(FLY.info){
-    if(e.target.closest('#fly-settings')||e.target.closest('#fly-pane a')) return;
-    flyShowChart();
-  }else if(e.target.closest('#fly-pane .grid')) flyShowInfo();
+  if(val){ if(val.id==='mw-val') setMaxWind(MW_DEFAULT); else setRange(RNG_DEFAULT); }
 });
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ if(FLY.info) flyShowChart(); return; }
   if(e.key!=='Enter'&&e.key!==' ') return;
-  const t=e.target;
-  const val=t&&t.closest?t.closest('#mw-val,#rng-val'):null;
-  if(val){ e.preventDefault(); if(val.id==='mw-val') setMaxWind(MW_DEFAULT); else setRange(RNG_DEFAULT); return; }
-  if(!FLY.info&&t&&t.closest&&t.closest('#fly-pane .grid')){ e.preventDefault(); flyShowInfo(); }
+  const t=e.target, val=t&&t.closest?t.closest('#mw-val,#rng-val'):null;
+  if(val){ e.preventDefault(); if(val.id==='mw-val') setMaxWind(MW_DEFAULT); else setRange(RNG_DEFAULT); }
 });
 
 // ---- refresh — called from the unified 30s pulse, on viewport moves, on range
