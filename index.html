@@ -1654,7 +1654,7 @@ async function sitrepTick(){
   const sosAll=featsIn('src-sos');
   if(sosAll.length){ const n=nearestIn('src-sos',lat,lon);
     anom.push(['danger','🚨','AIRCRAFT EMERGENCY',sosAll.length+' on 7700/7600/7500',
-      n?('nearest '+cut(n.f.properties.flight||'?',8)+' · '+dist(n.f)):'monitoring squawks',
+      n?(dist(n.f)+' · '+cut(n.f.properties.flight||'?',8)):'monitoring squawks',
       n?flyBtn(n.f):openBtn('https://globe.adsbexchange.com/','MAP')]); }
   // LOW OVERFLIGHT: any aircraft (civil / military / emergency) within ~1 mile of
   // ME and low above ground. AGL = aircraft MSL altitude − my ground elevation.
@@ -1673,14 +1673,14 @@ async function sitrepTick(){
       if(lo.agl<1000){ const p=lo.f.properties;
         anom.push([lo.agl<500?'danger':'alert','🛩️','LOW OVERFLIGHT',
           low.length+' within 1 mi · '+cut(p.flight||p.type||'aircraft',10),
-          Math.max(0,Math.round(lo.agl))+U(' ft')+' AGL · '+dist(lo.f),flyBtn(lo.f)]); }
+          dist(lo.f)+' · '+Math.max(0,Math.round(lo.agl))+U(' ft')+' AGL',flyBtn(lo.f)]); }
     }
   }
   const gRed=featsIn('src-gdacs').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(f.properties.level==='Red'||f.properties.level==='Orange'));
   if(gRed.length){ const nr=nearView('src-gdacs',b,lat,lon);
     anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',
       gRed.length+' red/orange in view',
-      nr?(cut(gName(nr.f.properties),15)+' · '+dist(nr.f)):'GDACS multi-hazard',
+      nr?(dist(nr.f)+' · '+cut(gName(nr.f.properties),15)):'GDACS multi-hazard',
       nr?flyBtn(nr.f):'']); }
   const nws=nwsInView(b);
   if(nws.length){
@@ -1721,7 +1721,7 @@ async function sitrepTick(){
     const info=(raw&&!/^magnitude 0\b/i.test(raw))?raw:((pr.type||'disaster')+' · '+(pr.level||'')+' alert');
     const more=worldRed.length>1?' +'+(worldRed.length-1):'';
     anom.push(['danger','🌀','DISASTER · WORLDWIDE',cut(info,26),
-      cut(gName(pr),16)+' · '+dist(nr)+more,flyBtn(nr)]); }
+      dist(nr)+' · '+cut(gName(pr),16)+more,flyBtn(nr)]); }
   const nwsInSet=new Set(nwsInView(b));
   const worldNws=featsIn('src-nws').filter(f=>/Extreme/i.test(f.properties.severity)&&!nwsInSet.has(f));
   if(worldNws.length) anom.push(['danger','⚠','EXTREME WX · OFF-MAP',cut(worldNws[0].properties.event,24),
