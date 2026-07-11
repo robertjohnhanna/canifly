@@ -59,11 +59,12 @@
     --inset:calc(max(var(--sa-t),var(--sa-b)) + 8px);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  /* 100dvh (dynamic viewport height) so the layout matches the actually-visible
-     area on mobile — the bottom nav lands on the real bottom instead of behind
-     the browser toolbar, and panels no longer bleed under it. 100% is the
-     fallback for browsers without dvh. */
-  html,body{margin:0;height:100%;height:100dvh;background:var(--bg);color:var(--ink);
+  /* Full viewport height so the bottom nav anchors to the true bottom of the
+     page. (dvh was tried but iOS Safari's floating URL bar makes it resolve
+     shorter than the visible area, leaving the nav floating with a gap below —
+     100% fills correctly. Closed panels use visibility:hidden below so nothing
+     bleeds under the nav regardless.) */
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
     font-family:var(--mono);font-size:13px;overflow:hidden;
     overscroll-behavior:none;touch-action:manipulation}
   #map{position:absolute;inset:0}
