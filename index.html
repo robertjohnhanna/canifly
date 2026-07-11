@@ -1141,6 +1141,28 @@ async function loadXray(){
     XRAY=(f&&(f.current_class||f.max_class))||null;
   }catch(e){ XRAY=null; }
 }
+// WORLD NEWS — Wikipedia's "In the news" (ITN): the only keyless, CORS-* feed
+// that's curated to MAJOR global events only (editor-vetted, a handful a day).
+// No map layer — it just feeds a WORLD section in the SITREP. Today's feed, or
+// yesterday's if today isn't published yet.
+let WORLD_NEWS=[]; // [{text,url}]
+async function loadWorldNews(){
+  const now=new Date();
+  for(let back=0;back<2;back++){
+    const d=new Date(now.getTime()-back*864e5);
+    const ymd=d.getUTCFullYear()+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+String(d.getUTCDate()).padStart(2,'0');
+    try{
+      const j=await getJSON('https://en.wikipedia.org/api/rest_v1/feed/featured/'+ymd,{timeout:12000});
+      const items=(j.news||[]).map(n=>{
+        const text=String(n.story||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+        const lead=(n.links||[]).find(l=>l&&l.content_urls)||{};
+        const url=lead.content_urls&&lead.content_urls.desktop?lead.content_urls.desktop.page:'';
+        return {text,url};
+      }).filter(x=>x.text);
+      if(items.length){ WORLD_NEWS=items.slice(0,6); return; }
+    }catch(e){}
+  }
+}
 
 /* =====================================================================
    6b. LOCATION + SITREP — the "at a glance" intelligence layer
@@ -1212,7 +1234,8 @@ function setUserFix(lat,lon,src,meta){
   // GPS refinement of the IP guess only gently recenters, and only if it moved
   // us far — so the load isn't a stutter of two back-to-back zoom animations.
   if(first){
-    gl.flyTo({center:[lon,lat],zoom:src==='gps'?10:8,speed:1.4,curve:1.3});
+    // same zoom the ⌖ ME button uses, so load and recenter land identically
+    gl.flyTo({center:[lon,lat],zoom:src==='gps'?11:8.5,speed:1.4,curve:1.3});
   } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>25){
     gl.easeTo({center:[lon,lat],duration:700});
   }
@@ -1260,11 +1283,29 @@ async function sitrepTick(){
   if(gRed.length){ const nr=nearView('src-gdacs',b,lat,lon);
     anom.push([gRed.some(f=>f.properties.level==='Red')?'danger':'alert','🌀','DISASTER ALERT',gRed.length+' red/orange in view'+(nr?' · '+fmtMi(nr.km):''),nr?flyBtn(nr.f):'']); }
   const nws=nwsInView(b);
-  if(nws.length){ const ex=nws.some(f=>/Extreme/i.test(f.properties.severity));
+  if(nws.length){
+    // A live NWS *warning* is imminent-threat by definition. Extreme/Severe
+    // (tornado, severe-tstorm, flash-flood) → RED; lesser-tagged → amber.
+    const red=nws.some(f=>/Extreme|Severe/i.test(f.properties.severity));
     const top=nws.slice().sort((x,y)=>({Extreme:3,Severe:2}[y.properties.severity]||1)-({Extreme:3,Severe:2}[x.properties.severity]||1))[0];
-    anom.push([ex?'danger':'alert','⚠','WEATHER WARNING',nws.length+' NWS warning'+(nws.length>1?'s':'')+' in view · '+escapeHtml(String(top.properties.event)),polyFlyBtn(top)]); }
+    anom.push([red?'danger':'alert','⚠','WEATHER WARNING',nws.length+' NWS warning'+(nws.length>1?'s':'')+' in view · '+escapeHtml(String(top.properties.event)),polyFlyBtn(top)]); }
   const bigQ=featsIn('src-emsc').filter(f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1])&&(+f.properties.mag)>=5).sort((x,y)=>y.properties.mag-x.properties.mag)[0];
   if(bigQ) anom.push(['danger','🌍','MAJOR EARTHQUAKE','M'+bigQ.properties.mag+' · '+escapeHtml(String(bigQ.properties.place||'').slice(0,42)),flyBtn(bigQ)]);
+
+  // -- WORLDWIDE anomalies: red-level events ANYWHERE, so a global catastrophe
+  //    still turns the SITREP red even when the map is looking elsewhere. Only
+  //    surfaced when NOT already covered by an in-view row above. --
+  const isIn=f=>inBounds(b,f.geometry.coordinates[0],f.geometry.coordinates[1]);
+  const worldQ=featsIn('src-emsc').filter(f=>(+f.properties.mag)>=6.5&&!isIn(f))
+    .sort((x,y)=>y.properties.mag-x.properties.mag)[0];
+  if(worldQ) anom.push(['danger','🌍','MAJOR QUAKE · WORLDWIDE','M'+worldQ.properties.mag+' · '+escapeHtml(String(worldQ.properties.place||'').slice(0,38)),flyBtn(worldQ)]);
+  const worldRed=featsIn('src-gdacs').filter(f=>f.properties.level==='Red'&&!isIn(f));
+  if(worldRed.length){ const nr=worldRed.slice().sort((x,y)=>havKm(lat,lon,x.geometry.coordinates[1],x.geometry.coordinates[0])-havKm(lat,lon,y.geometry.coordinates[1],y.geometry.coordinates[0]))[0];
+    anom.push(['danger','🌀','DISASTER · WORLDWIDE',worldRed.length+' red-level off-map · '+escapeHtml(String(nr.properties.name||nr.properties.type||'').slice(0,30)),flyBtn(nr)]); }
+  const nwsInSet=new Set(nwsInView(b));
+  const worldNws=featsIn('src-nws').filter(f=>/Extreme/i.test(f.properties.severity)&&!nwsInSet.has(f));
+  if(worldNws.length) anom.push(['danger','⚠','EXTREME WARNING · OFF-MAP',worldNws.length+' extreme NWS warning'+(worldNws.length>1?'s':'')+' · '+escapeHtml(String(worldNws[0].properties.event||'')),polyFlyBtn(worldNws[0])]);
+
   // space weather (global, not view-scoped): geomagnetic storm + solar flare
   if(KP!=null&&KP>=5) anom.push(['alert','🧲','GEOMAGNETIC STORM','Kp '+KP+' — HF / GPS / grid impact possible','']);
   if(XRAY&&/^[MX]/.test(XRAY)) anom.push([/^X/.test(XRAY)?'danger':'alert','☀','SOLAR FLARE '+XRAY,'HF radio blackout risk','']);
@@ -1301,6 +1342,13 @@ async function sitrepTick(){
   if(nd&&!gRed.includes(nd.f)) row('','🌀',(nd.f.properties.type||'DISASTER').toUpperCase()+' · '+fmtMi(nd.km),
     escapeHtml(String(nd.f.properties.name||'').slice(0,56)),flyBtn(nd.f));
 
+  // -- WORLD NEWS (major global events, not map-scoped) — Wikipedia ITN --
+  if(WORLD_NEWS.length){
+    rows.push('<div class="sit-div"></div>');
+    WORLD_NEWS.forEach(n=>row('','📰',escapeHtml(n.text.slice(0,120)),'',
+      n.url?`<button class="act" data-act="open" data-url="${escapeHtml(n.url)}">OPEN</button>`:''));
+  }
+
   $('#sit-body').innerHTML=rows.length?rows.join(''):
     '<div class="sit-empty">NO SIGNALS IN THIS AREA — PAN OR ZOOM THE MAP</div>';
 }
@@ -1314,6 +1362,7 @@ $('#sit-body').addEventListener('click',e=>{
     if(isFinite(lon)&&isFinite(lat)) gl.flyTo({center:[lon,lat],zoom:9});
     if(window.matchMedia('(max-width:900px)').matches) openSheet('');
   }
+  if(act==='open'&&b.dataset.url) window.open(b.dataset.url,'_blank','noopener');
 });
 /* =====================================================================
    7. EMERGENCY BROADCAST — NOAA WEATHER RADIO, auto-tuned (THE CORE FEATURE)
@@ -1555,6 +1604,7 @@ gl.on('load',()=>{
   loadEmgPool(); // warm the emergency-broadcast pool so the first fix tunes fast
   loadKp();   setInterval(loadKp,120000);   // space weather: planetary Kp
   loadXray(); setInterval(loadXray,120000); // space weather: GOES X-ray flare
+  loadWorldNews().then(sitrepTick); setInterval(()=>loadWorldNews().then(sitrepTick),1800000); // world news (ITN), 30 min
   setMapPadding();
   locate();
   sitrepTick(); // SITREP works off the map area, even before a location fix
