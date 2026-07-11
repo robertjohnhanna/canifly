@@ -434,22 +434,11 @@ const escapeHtml =s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 /* =====================================================================
    1. MAP — CARTO dark basemap (keyless raster tiles)
    ===================================================================== */
-// Radar: RainViewer (keyless, CORS *). 512px tiles + smoothing + the NEXRAD
-// Level-III colour ramp read far cleaner than a raw 256px mosaic. The frame
-// path rotates as new scans land, so refreshRadar() re-reads the frame index
-// and swaps the tile template — called once on load and on every 30s pulse.
-const RV_INDEX='https://api.rainviewer.com/public/weather-maps.json';
-// {host}{path}/512/{z}/{x}/{y}/{colour}/{smooth}_{snow}.png — colour 6 = NEXRAD
-const rvTiles=(host,path)=>host+path+'/512/{z}/{x}/{y}/6/1_1.png';
-async function refreshRadar(){
-  try{
-    const j=await getJSON(RV_INDEX,{timeout:8000});
-    const past=j&&j.radar&&j.radar.past;
-    if(!j.host||!past||!past.length) return;
-    const s=gl.getSource('radar');
-    if(s&&s.setTiles) s.setTiles([rvTiles(j.host,past[past.length-1].path)]);
-  }catch(e){}
-}
+// NEXRAD base-reflectivity mosaic tiles (Iowa State Mesonet, keyless). The ?ts
+// cache-bust makes each 30s refresh pull the latest mosaic.
+const RADAR_URL='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
+const RADAR_TILE=RADAR_URL+'?'+Date.now();
+function refreshRadar(){ const s=gl.getSource('radar'); if(s&&s.setTiles) s.setTiles([RADAR_URL+'?'+Date.now()]); }
 const gl = new maplibregl.Map({
   container:'map',
   style:{
@@ -461,16 +450,14 @@ const gl = new maplibregl.Map({
                'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
         attribution:'© OpenStreetMap · © CARTO' },
-      // Radar (RainViewer, 512px). The real frame template is set by the first
-      // refreshRadar() on load; this bootstrap path just satisfies the schema
-      // (its tiles 404 harmlessly and render nothing until the swap). Sits above
-      // the basemap, below the aircraft/warning layers (added later).
-      radar:{ type:'raster', tileSize:512,
-        tiles:['https://tilecache.rainviewer.com/v2/radar/0/512/{z}/{x}/{y}/6/1_1.png'],
-        attribution:'Radar © RainViewer' }
+      // NEXRAD base-reflectivity mosaic (~1 km, latest) — Iowa State Mesonet,
+      // keyless. Refreshed on the 30s pulse via refreshRadar(). Sits above the
+      // basemap, below the aircraft/warning layers (added later).
+      radar:{ type:'raster', tileSize:256,
+        tiles:[RADAR_TILE], attribution:'NEXRAD · Iowa State Mesonet' }
     },
     layers:[{id:'carto',type:'raster',source:'carto'},
-      {id:'radar',type:'raster',source:'radar',paint:{'raster-opacity':0.6,'raster-resampling':'linear'}}]
+      {id:'radar',type:'raster',source:'radar',paint:{'raster-opacity':0.5}}]
   },
   center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a location fix lands
   renderWorldCopies:true, attributionControl:false
@@ -1462,7 +1449,6 @@ gl.on('load',()=>{
   // SITREP outlook card only).
   LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; scheduleLayer(cfg); });
   refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // 30s refresh + clock
-  refreshRadar(); // pull the current radar frame immediately, don't wait for the first pulse
   loadEmgPool(); // warm the emergency-broadcast pool so the first fix tunes fast
   loadKp();   setInterval(loadKp,180000);   // space weather: planetary Kp (SITREP card)
   loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare (SITREP card)
