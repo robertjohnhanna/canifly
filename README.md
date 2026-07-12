@@ -1,14 +1,14 @@
-# sitrep
+# canifly
 
-**One map, one panel: a live drone-preflight SITREP for wherever the
-crosshair points. Keyless, single-file, no backend.**
+**Can I fly my drone here, now, and how high? One keyless, single-file map
+that answers it for wherever the crosshair points.**
 
-A self-contained HTML dashboard: a dark map with a centre crosshair and a
-docked **SITREP** panel (a bottom sheet on mobile). The panel holds the
-**canifly flyability chart** — can a small drone fly *here, now, and for the
-next three hours, and how high* — plus a settings box (max wind, range) and a
-stack of distance-sorted intelligence cards for everything inside the range
-ring: low manned traffic, NWS warnings, FAA restrictions, park no-fly land,
+A self-contained HTML app: a dark map with a centre crosshair and a docked
+panel (a bottom sheet on mobile). The panel leads with the **flyability
+chart** — can a small drone fly *here, now, and for the next three hours, and
+how high* — plus a settings box (max wind, range) and a **SITREP** briefing: a
+stack of distance-sorted cards for everything inside the range ring — low
+manned traffic, FAA airspace ceilings, NWS warnings, park no-fly land,
 severe-weather outlooks, space weather, and the local forecast.
 
 No backend. No build step. No API keys. No `npm install`. **Open `index.html`
@@ -23,7 +23,7 @@ open index.html      # or just double-click it
 MapLibre GL loads from CDN; every data feed is fetched client-side from
 keyless public APIs.
 
-## The flyability chart (canifly, integrated)
+## The flyability chart
 
 A grid of altitudes (400 ft → surface, 50 ft steps — the FAA Part 107 band)
 × four time columns (NOW, +1 h, +2 h, +3 h). Each cell is binary: green =

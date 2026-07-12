@@ -6,29 +6,29 @@
 <meta name="theme-color" content="#0a0e14">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="description" content="sitrep — keyless multi-domain OSINT dashboard: one map, every liftable public signal.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%A1%3C/text%3E%3C/svg%3E">
-<title>SITREP</title>
+<meta name="apple-mobile-web-app-title" content="canifly">
+<meta name="description" content="canifly — keyless drone preflight: can I fly here, now, and how high? One map, live weather, winds aloft, FAA airspace, radar and traffic.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9B%A9%3C/text%3E%3C/svg%3E">
+<title>canifly</title>
 
 <!-- ============================================================
-     sitrep — self-contained OSINT map dashboard
+     canifly — self-contained drone-preflight map
      ------------------------------------------------------------
      Constraints (non-negotiable): one HTML file, no backend, no
      build step, no API keys, no npm. Opens directly in a browser.
      Vanilla JS + MapLibre GL (CDN).
 
-     Layout: a full-map canvas with a single docked SITREP panel on
-     the right (on mobile, a bottom sheet). The panel lists in-view
-     signals as distance-sorted cards, then the canifly drone-preflight
-     flyability chart — fully integrated (ported from the canifly repo,
-     no iframe), both driven by the map-centre crosshair.
+     Layout: a full-map canvas with a single docked panel on the right
+     (on mobile, a bottom sheet): the canifly flyability chart + range
+     settings, then a distance-sorted SITREP briefing of everything in
+     the range ring — all driven by the map-centre crosshair.
 
      Map layers (all keyless, CORS-*): live aircraft (adsb), NWS
      warnings, NEXRAD radar (Iowa State Mesonet), FAA airspace (Class
      B/C/D + special-use / prohibited / security / stadium restrictions),
      National Park Service lands, plus a dashed range ring at the crosshair
-     matching the canifly RANGE setting. SITREP-only
-     feeds: SPC Day-1 outlook, NOAA SWPC space weather (Kp / GOES X-ray).
+     matching the RANGE setting. Card/chart-only feeds: SPC Day-1 outlook,
+     NOAA SWPC space weather (Kp / GOES X-ray).
      All sources are keyless with ACAO:* so fetch works cross-origin;
      anything requiring a key is excluded by the keyless rule.
      ============================================================ -->
@@ -353,10 +353,10 @@
 <!-- center-on-me: floating control, bottom-right of the map -->
 <button id="loc-btn" title="center map on my location" aria-label="center on my location"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 1.5v3.4M12 19.1v3.4M1.5 12h3.4M19.1 12h3.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
 
-<!-- mobile bottom navigation -->
+<!-- mobile bottom navigation (data-p stays the internal panel id) -->
 <div id="mnav">
   <button data-p="" class="active">MAP</button>
-  <button data-p="sitrep">SITREP</button>
+  <button data-p="sitrep">CANIFLY</button>
 </div>
 
 <div id="toast"></div>
