@@ -466,6 +466,19 @@ function viewBounds(){
   [[0,0],[r,0],[r,h],[0,h]].forEach(pt=>bb.extend(gl.unproject(pt)));
   return bb;
 }
+// STATIC REGIONAL CACHE — airspace/NPS barely change (56-day chart cycle) and
+// the FAA service can't return the whole US in one shot (~50 MB, times out) and
+// ignores server generalisation, so we can't "pull the entire thing". Instead we
+// pull a fixed REGION_DEG box around the crosshair ONCE, cache it, draw it at
+// EVERY zoom, and drop it from the periodic refresh — only re-pulling when the
+// crosshair travels past REGION_REFETCH_KM (so the cached region still overlaps).
+const REGION_DEG=1.25;                 // half-box, ° (~85 mi each way around you)
+const REGION_REFETCH_KM=85;            // travel this far → re-pull the region
+function regionEnv(){
+  const c=gl.getCenter();
+  return [c.lng-REGION_DEG, c.lat-REGION_DEG, c.lng+REGION_DEG, c.lat+REGION_DEG]
+    .map(n=>n.toFixed(3)).join(',');
+}
 // polygon feature -> a representative [lon,lat] (first vertex), for fly-to / bounds
 function polyPt(f){
   const g=f.geometry; if(!g) return null;
@@ -799,30 +812,29 @@ defLayer({
   //   • National_Defense_Airspace_TFR_Areas — the standing national-defense
   //     no-fly zones (a zone in range forces the canifly ceiling to 0). Drawn
   //     in red so they read as "avoid", but still light.
-  // Viewport-scoped and zoom-gated so a wide view doesn't pull the country.
+  // STATIC regional cache (see regionEnv): pulled once for a box around you,
+  // shown at every zoom, refreshed only when you travel — not on the pulse.
   // This is a VISUAL layer only — the canifly gate still runs its own strict
   // point-buffer query, so a soft-failing overlay never understates a no-fly.
-  id:'airspace', label:'FAA airspace + restrictions', color:'#5b8def', refresh:900,
-  viewport:true, geom:'fill', colored:true, fillOpacity:0.05,
+  id:'airspace', label:'FAA airspace + restrictions', color:'#5b8def',
+  static:true, geom:'fill', colored:true, fillOpacity:0.05,
   lineWidth:1, lineOpacity:0.34,
   loader: async ()=>{
-    // zoom gate: too wide to query — return null so the runtime KEEPS the
-    // zones already loaded (wiping them would silently un-ground the chart's
-    // Prohibited/security/park gate on zoom-out)
-    if(gl.getZoom()<7) return null;
-    const b=viewBounds();
-    const env=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(3)).join(',');
-    const q=(svc,fields)=>`https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/${svc}/FeatureServer/0/query`
+    const env=regionEnv();
+    const q=(svc,fields,where)=>`https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/${svc}/FeatureServer/0/query`
       +`?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326`
-      +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&outFields=${fields}&f=geojson`;
+      +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&outFields=${fields}`
+      +(where?`&where=${encodeURIComponent(where)}`:'')+`&f=geojson`;
     // five keyless CORS feeds from the FAA org, each fail-soft (a soft failure just
-    // omits its features — the canifly gate still runs its own strict query)
+    // omits its features — the canifly gate still runs its own strict query).
+    // Class_Airspace is filtered SERVER-side to the classes we draw (B/C/D + the
+    // surface-E2), so the huge en-route Class-E5 geometry never hits the wire.
     const [cls,def,sua,nsufr,stad]=await Promise.all([
-      getJSON(q('Class_Airspace','NAME,CLASS,LOCAL_TYPE'),{timeout:10000}).catch(()=>null),
-      getJSON(q('National_Defense_Airspace_TFR_Areas','NAME'),{timeout:10000}).catch(()=>null),
-      getJSON(q('Special_Use_Airspace','NAME,TYPE_CODE,UPPER_VAL,LOWER_VAL'),{timeout:10000}).catch(()=>null),
-      getJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:10000}).catch(()=>null),
-      getJSON(q('Stadiums','NAME'),{timeout:10000}).catch(()=>null)]);
+      getJSON(q('Class_Airspace','NAME,CLASS,LOCAL_TYPE',"CLASS IN ('B','C','D') OR LOCAL_TYPE='CLASS_E2'"),{timeout:20000}).catch(()=>null),
+      getJSON(q('National_Defense_Airspace_TFR_Areas','NAME'),{timeout:12000}).catch(()=>null),
+      getJSON(q('Special_Use_Airspace','NAME,TYPE_CODE,UPPER_VAL,LOWER_VAL'),{timeout:15000}).catch(()=>null),
+      getJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:12000}).catch(()=>null),
+      getJSON(q('Stadiums','NAME'),{timeout:12000}).catch(()=>null)]);
     const feats=[];
     // stamp a representative lon/lat on each feature so its popup can link out to
     // a sectional chart centred on the zone
@@ -876,22 +888,19 @@ defLayer({
   // recreation areas…). NPS policy prohibits launching, landing, or operating a
   // drone from within a unit's boundary, so for a preflight this is a hard
   // no-fly. Drawn LIGHTLY in park green. Keyless NPS ArcGIS boundary service,
-  // CORS *. Viewport-scoped + zoom-gated; geometry generalised per zoom so a big
-  // park doesn't ship a huge polygon. Sunk beneath the aircraft at boot.
-  id:'nps', label:'National Park Service lands', color:'#3fa46a', refresh:1800,
-  viewport:true, geom:'fill', colored:true, fillOpacity:0.06, lineWidth:1, lineOpacity:0.3,
+  // CORS *. STATIC regional cache (see regionEnv) like airspace — pulled once
+  // for a box around you, drawn at every zoom, re-pulled only on travel. The
+  // boundary geometry is generalised ~150 m to stay light. Sunk beneath the
+  // aircraft at boot.
+  id:'nps', label:'National Park Service lands', color:'#3fa46a',
+  static:true, geom:'fill', colored:true, fillOpacity:0.06, lineWidth:1, lineOpacity:0.3,
   loader: async ()=>{
-    if(gl.getZoom()<7) return null;   // zoom gate — keep what's loaded (see airspace)
-    const b=viewBounds();
-    const env=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(3)).join(',');
-    // generalise geometry to ~2 px at the current zoom so large park boundaries
-    // stay light on the wire without visibly changing shape
-    const off=Math.max(0.0001, 360/(Math.pow(2,gl.getZoom())*256)*2);
+    const env=regionEnv();
     const url='https://services1.arcgis.com/fBc8EJBxQRMcHlei/ArcGIS/rest/services/NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/FeatureServer/2/query'
       +`?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326`
-      +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&maxAllowableOffset=${off.toFixed(5)}`
+      +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&maxAllowableOffset=0.0015`
       +'&outFields=UNIT_NAME,UNIT_TYPE,UNIT_CODE&f=geojson';
-    const j=await getJSON(url,{timeout:10000});
+    const j=await getJSON(url,{timeout:15000});
     const feats=[];
     (j.features||[]).forEach(f=>{ if(!f.geometry) return; const p=f.properties||{};
       feats.push({type:'Feature',geometry:f.geometry,properties:{_kind:'nps',
@@ -981,6 +990,9 @@ async function runLayer(cfg){
   // skip a layer that's still fetching.
   const myGen=++st.gen;
   st.loading=true;
+  // static layers cache a whole region; snapshot the region centre at fetch
+  // start so the travel-based refetch measures from where this data was pulled
+  const startCenter=cfg.static?gl.getCenter():null;
   try{
     if(st.quickTimer){ clearTimeout(st.quickTimer); st.quickTimer=null; }
     // up to 3 attempts with exponential backoff before giving up this cycle
@@ -989,12 +1001,13 @@ async function runLayer(cfg){
       try{
         const fc=await cfg.loader();
         if(myGen!==st.gen) return;               // superseded by a newer refresh — drop this result
-        // a null result = "no update" (the zoom gates) — keep what's loaded
+        // a null result = "no update" — keep what's loaded
         if(fc){
           const src=gl.getSource('src-'+cfg.id);
           if(src) src.setData(fc);
           st.features=fc.features||[];
         }
+        if(startCenter) st.center=startCenter;   // region now cached around here
         st.fails=0;
         scheduleSitrep();   // SITREP re-reads the fresh data as part of the refresh
         return;
@@ -1016,20 +1029,38 @@ async function runLayer(cfg){
       const delay=Math.min(30000,6000*st.fails);
       st.quickTimer=setTimeout(()=>{ st.quickTimer=null; runLayer(cfg); },delay);
     }
-  } finally { if(myGen===st.gen) st.loading=false; }
+  } finally {
+    if(myGen===st.gen){
+      st.loading=false;
+      // a region load that finished while the crosshair kept moving (e.g. the
+      // boot load landing after the location fix flew the map) may already be
+      // stale — re-check so the cache catches up to where you actually are
+      if(cfg.static) ensureStaticRegion();
+    }
+  }
+}
+// Static regional layers (airspace, NPS): (re)pull the region around the
+// crosshair when nothing is cached yet, or the crosshair has travelled past the
+// cached region's overlap. Never fires on zoom or the pulse — only on travel.
+function ensureStaticRegion(){
+  const c=gl.getCenter();
+  LAYERS.filter(l=>l.static).forEach(cfg=>{
+    const st=LAYER_STATE[cfg.id]; if(!st||!st.started||st.loading) return;
+    if(!st.center || havKm(st.center.lat,st.center.lng,c.lat,c.lng)>REGION_REFETCH_KM) runLayer(cfg);
+  });
 }
 
 // ---- unified refresh: a single 30s countdown drives the refresh of every DUE
-//      layer (each still respects its own refresh interval, so the rate-limited
-//      FAA/NPS ArcGIS feeds update less often). "Xs to update" reflects the
-//      primary live cadence. ----
+//      *dynamic* layer. STATIC layers (airspace, NPS) never ride the pulse —
+//      they're a regional cache refreshed only on travel (see refreshViewport).
+//      "Xs to update" reflects the primary live cadence. ----
 const REFRESH_S=30;
 let refreshBase=Date.now(), pulseCount=0;
 function refreshDueLayers(){
   pulseCount++;
   LAYERS.forEach(cfg=>{
     const st=LAYER_STATE[cfg.id];
-    if(!st||!st.started||cfg.refresh<=0||st.loading) return;
+    if(!st||!st.started||cfg.static||!(cfg.refresh>0)||st.loading) return;
     // refresh every N pulses (N=refresh/30), grid-aligned so a moveend that
     // reset the countdown can't push a layer's refresh past a whole cycle
     const everyN=Math.max(1,Math.round(cfg.refresh/REFRESH_S));
@@ -1660,8 +1691,8 @@ function refreshViewport(){
     const key=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(2)).join(',')+'@'+z.toFixed(1);
     if(key!==lastViewKey){
       lastViewKey=key;
-      // Refetch the viewport-scoped feeds (aircraft, FAA airspace, NPS lands)
-      // for the new area so their data tracks the view.
+      // DYNAMIC viewport feeds (aircraft) refetch for the new area on every view
+      // change so their data tracks the view.
       LAYERS.filter(l=>l.viewport).forEach(cfg=>{
         const st=LAYER_STATE[cfg.id];
         if(st&&st.started) runLayer(cfg);
@@ -1671,6 +1702,11 @@ function refreshViewport(){
       // fresh 30s away, not whatever was left on the clock.
       refreshBase=Date.now();
     }
+    // STATIC regional layers (airspace, NPS) re-pull ONLY when the crosshair has
+    // travelled past the cached region's overlap — never on zoom (the cached
+    // region already covers every zoom) and never on the pulse. This is what
+    // keeps airspace painted when you zoom out.
+    ensureStaticRegion();
     // The canifly chart tracks the crosshair like the SITREP: refetch when the
     // centre really moved (flyOnMove's own threshold). scheduleSitrep repaints
     // the chart FIRST and then ticks the SITREP, so the title always reads the
@@ -2341,9 +2377,12 @@ gl.on('load',()=>{
   updateRing();
   enforceRingZoom();   // establish the initial ring-≤-1/3 max-zoom cap
   bindLayerPopups();
-  // Pull every layer once on load (kept layers stay on the map; SPC feeds the
-  // SITREP outlook card only). refreshTick handles the ongoing refresh.
-  LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; runLayer(cfg); });
+  // Pull every DYNAMIC layer once on load (SPC feeds the SITREP outlook card
+  // only). STATIC layers (airspace/NPS) are a regional cache — don't pull them
+  // around the pre-fix default centre; the first location fix's moveend loads
+  // the region around YOU (with a fallback below if no fix ever lands).
+  LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; if(!cfg.static) runLayer(cfg); });
+  setTimeout(ensureStaticRegion,3500);   // fallback: load the region even if location never resolves
   refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // 30s refresh + clock
   updateLoadRing(); setInterval(updateLoadRing,200);   // bottom-left data-loading ring
   loadKp();   setInterval(loadKp,180000);   // space weather: planetary Kp (SITREP card)
