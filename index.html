@@ -1542,9 +1542,12 @@ function sitrepTick(){
   //    AIRCRAFT card, i.e. at warning distance/altitude). Tiers: red hazards,
   //    amber hazards, everything else — distance sorts WITHIN each tier.
   //    Capped so a busy area can't flood it. --
-  // The LAANC ceiling the chart computed for the crosshair — lets a controlled-
-  // airspace card you're OVERHEAD escalate to match it (grounded → red, capped →
-  // amber). -1 = no-fly, <400 = capped, 400 = no limit; null when unknown.
+  // The LAANC ceiling the chart computed for the RANGE RING (worst ceiling
+  // anywhere within RNG.mi of the crosshair — the same buffer the chart caps
+  // on). A controlled-airspace card that's IN RANGE escalates to match it
+  // (grounded → red, capped → amber), not just when you're overhead — the ring
+  // is what the flyability sweeps. -1 = no-fly, <400 = capped, 400 = no limit;
+  // null when unknown.
   const aspCap=(FLY.detail&&!FLY.detail.aspUnknown)?FLY.detail.aspCapFt:null;
   const items=[];
   CATS.forEach(cfg=>catItems(cfg,lat,lon,rangeKm).forEach(f=>{
@@ -1563,9 +1566,11 @@ function sitrepTick(){
       headOv='LOW AIRCRAFT'; subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12);
       det=breachInfo.get(acKey(f.properties));
     }
-    // OVERHEAD controlled airspace: colour + label it by the real LAANC ceiling.
-    else if(cfg.ctrl&&inside&&aspCap!=null){
-      // line 3 already reads "overhead · …", so det is just the consequence
+    // IN-RANGE controlled airspace: colour + label it by the LAANC ceiling the
+    // chart swept across the whole ring — red no-fly if it grounds, amber if it
+    // caps below 400. line 3 already carries "overhead"/distance, so det is just
+    // the consequence.
+    else if(cfg.ctrl&&aspCap!=null){
       if(aspCap<0){ cls='danger'; det='no-fly'; }
       else if(aspCap<SPEC.regFt){ cls='alert'; det='ceiling '+aspCap+U(' ft'); }
     }
