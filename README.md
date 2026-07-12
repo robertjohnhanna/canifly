@@ -114,7 +114,12 @@ context cards):
     can't compute — the red case reddens the title so a total outage can't hide
     behind a green skeleton.
 - 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
-  ✈️ / 🪖 civil and military traffic. Airspace cards follow a **solid three-way
+  civil and military traffic, each icon reflecting **plane vs helicopter** (from
+  the ADS-B rotorcraft category): civil ✈️ / 🚁, military 🪖✈️ / 🪖🚁 (the 🪖
+  marks military — there's only one helicopter glyph, so military can't use a
+  different one). On the map the same split shows as a plane or helicopter
+  silhouette in the type colour (green civil, yellow military, red emergency).
+  Airspace cards follow a **solid three-way
   model** — *authorization* (controlled airspace, needs a ceiling) is not the
   same as a *restriction* (a stay-out zone), and neither is an *advisory*:
   - ⛔ **hard restrictions** — defense, prohibited, security (NSUFR) — are red

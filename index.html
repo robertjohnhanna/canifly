@@ -252,6 +252,9 @@
      three text lines. .u keeps the emoji from being forced upper-case. */
   .sit-row .ic{flex:0 0 30px;text-align:center;align-self:center;
     font-size:23px;line-height:1;text-transform:none}
+  /* military aircraft icon = 🪖 marker + type glyph (✈️/🚁); shrink the pair so
+     the two emoji fit the fixed icon slot without spilling into the text */
+  .sit-row .ic .micon{display:inline-block;font-size:15px;letter-spacing:-.5px;white-space:nowrap}
   .sit-row .tx{flex:1;min-width:0;line-height:1.34;display:flex;flex-direction:column;justify-content:center}
   .sit-row .tx .s1,.sit-row .tx .s2,.sit-row .tx .s3{display:block;white-space:nowrap;
     overflow:hidden;text-overflow:clip}
@@ -438,10 +441,14 @@ async function adsbViewport(){
   const j=await adsb('/point/'+c.lat.toFixed(3)+'/'+c.lng.toFixed(3)+'/250');
   return {ac:j.ac||[]};
 }
+// Is this ADS-B contact a rotorcraft? The emitter CATEGORY 'A7' is the ICAO
+// "Rotorcraft" class (the authoritative signal); fall back to the human-readable
+// description mentioning a helicopter/rotor when the category is absent.
+const isHeli=a=>a.category==='A7'||/helicopter|\brotor/i.test(a.desc||'');
 function acFeatures(j,kind){
   return (j.ac||[]).filter(a=>a.lat!=null&&a.lon!=null).map(a=>({
     type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
-    properties:{_kind:kind,
+    properties:{_kind:kind, heli:isHeli(a)?1:0,
       flight:String(a.flight||a.r||a.hex||'?').trim(),
       type:a.t||'?',desc:a.desc||'',op:a.ownOp||'',
       alt:a.alt_baro??a.alt_geom??'?',
@@ -671,9 +678,10 @@ let cancelCenterZoom=()=>{};
 })();
 
 /* =====================================================================
-   2. ICONS — the only map markers are the three aircraft silhouettes
-   (green civil / yellow military / red emergency), drawn nose-up so
-   icon-rotate = heading works. Rasterised to canvas, registered with addImage.
+   2. ICONS — the only map markers are the aircraft silhouettes: a PLANE or a
+   HELICOPTER shape (chosen per contact from the ADS-B rotorcraft category) in
+   the type colour (green civil / yellow military / red emergency), drawn nose-up
+   so icon-rotate = heading works. Rasterised to canvas, registered with addImage.
    ===================================================================== */
 function shapeIcon(color,pts,px){
   const s=px||40, c=document.createElement('canvas'); c.width=c.height=s;
@@ -687,12 +695,37 @@ function shapeIcon(color,pts,px){
 // plane silhouette, nose up
 const PLANE=[[0,-15],[-1.6,-6],[-13,3],[-13,6],[-1.6,3.5],[-1.6,11],[-5,14.5],[-5,16],[0,14],
   [5,16],[5,14.5],[1.6,11],[1.6,3.5],[13,6],[13,3],[1.6,-6]];
+// helicopter silhouette, nose up — same colour scheme as the plane, but a rotor
+// bar + fuselage pod + tail boom/rotor so it reads as a helicopter on the map.
+// Drawn from parts (each a colour rod with a dark edge, plus a filled pod) rather
+// than one polygon, since a rotor disc can't be traced as a single outline.
+function heliShape(color,px){
+  const s=px||40, c=document.createElement('canvas'); c.width=c.height=s;
+  const x=c.getContext('2d',{willReadFrequently:true}); x.translate(s/2,s/2);
+  const u=s/32; x.lineJoin='round'; x.lineCap='round';
+  const rod=(x1,y1,x2,y2,w)=>{           // colour bar with a dark outline
+    x.strokeStyle='rgba(3,8,14,.8)'; x.lineWidth=u*(w+1.6);
+    x.beginPath(); x.moveTo(x1*u,y1*u); x.lineTo(x2*u,y2*u); x.stroke();
+    x.strokeStyle=color; x.lineWidth=u*w;
+    x.beginPath(); x.moveTo(x1*u,y1*u); x.lineTo(x2*u,y2*u); x.stroke();
+  };
+  rod(0,2, 0,15, 2.2);          // tail boom (nose up → tail down)
+  rod(2,14.5, 7,14.5, 1.8);     // tail rotor
+  rod(-14,-2, 14,-2, 2.4);      // main rotor bar over the cabin
+  x.beginPath(); x.ellipse(0,-2,4.4*u,7.2*u,0,0,Math.PI*2);   // fuselage pod (over the hub)
+  x.fillStyle=color; x.fill();
+  x.strokeStyle='rgba(3,8,14,.8)'; x.lineWidth=u*1.4; x.stroke();
+  return x.getImageData(0,0,s,s);
+}
 function addImg(name,data){ if(!gl.hasImage(name)) gl.addImage(name,data,{pixelRatio:2}); }
 const YEL='#ffce4d';
 function registerIcons(){
-  addImg('ac-near',  shapeIcon('#2fe07a',PLANE));   // aircraft = green
-  addImg('ac-mil',   shapeIcon(YEL,PLANE));         // military = yellow
-  addImg('ac-sos',   shapeIcon('#ff4455',PLANE,44));// emergency = red
+  addImg('ac-near',  shapeIcon('#2fe07a',PLANE));   // civil plane = green
+  addImg('ac-mil',   shapeIcon(YEL,PLANE));         // military plane = yellow
+  addImg('ac-sos',   shapeIcon('#ff4455',PLANE,44));// emergency plane = red
+  addImg('heli-near',heliShape('#2fe07a'));         // civil helicopter = green
+  addImg('heli-mil', heliShape(YEL));               // military helicopter = yellow
+  addImg('heli-sos', heliShape('#ff4455',44));      // emergency helicopter = red
 }
 
 /* =====================================================================
@@ -716,7 +749,7 @@ const USER={lat:null,lon:null,src:null,tz:''};
 defLayer({
   id:'nearair', label:'Aircraft (250 nm)', color:'#2fe07a', refresh:30,
   viewport:true,   // data is scoped to the map area → refetch on every view change
-  icon:'ac-near', rotate:true, iconSize:0.6,
+  icon:['case',['==',['get','heli'],1],'heli-near','ac-near'], rotate:true, iconSize:0.6,
   // every civil (non-military) aircraft in the current map area; refetched on
   // pan/zoom (see moveend) and every 30 s pulse
   loader: async ()=>
@@ -726,13 +759,13 @@ defLayer({
 
 defLayer({
   id:'mil', label:'Military aircraft', color:'#ffce4d', refresh:30,
-  icon:'ac-mil', rotate:true, iconSize:0.5,
+  icon:['case',['==',['get','heli'],1],'heli-mil','ac-mil'], rotate:true, iconSize:0.5,
   loader: async ()=> ({type:'FeatureCollection',features:acFeatures(await adsb('/mil'),'mil')})
 });
 
 defLayer({
   id:'sos', label:'Emergency squawks', color:'#ff4455', refresh:30,
-  icon:'ac-sos', rotate:true, iconSize:0.6,
+  icon:['case',['==',['get','heli'],1],'heli-sos','ac-sos'], rotate:true, iconSize:0.6,
   loader: async ()=>{
     // 7700 = general emergency, 7600 = radio failure, 7500 = unlawful interference
     const codes=['7700','7600','7500'];
@@ -748,7 +781,7 @@ defLayer({
       (r.value.ac||[]).forEach(a=>{
         if(a.lat==null||a.lon==null) return;
         feats.push({type:'Feature',geometry:{type:'Point',coordinates:[a.lon,a.lat]},
-          properties:{_kind:'sos',_rot:a.track!=null?a.track:0,
+          properties:{_kind:'sos',_rot:a.track!=null?a.track:0, heli:isHeli(a)?1:0,
             flight:String(a.flight||a.r||a.hex||'?').trim(),hex:a.hex||'',
             code:codes[i],type:a.t||'?',desc:a.desc||'',op:a.ownOp||'',alt:a.alt_baro??a.alt_geom??'?',
             altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),
@@ -1380,6 +1413,13 @@ const ALT=f=>{const a=f.properties.alt;
 // resort — so a card never reads a bare '?' when a type or operator is known.
 const acSub=f=>{const p=f.properties, type=p.type&&p.type!=='?'?p.type:'';
   return escapeHtml(p.desc||type||p.op||'?');};
+// Aircraft card icons — plane vs helicopter, military distinct from civil. There
+// is only ONE helicopter glyph (🚁), so military can't use a different helicopter
+// emoji; instead it extends the app's existing 🪖 military marker into a
+// helmet+type compound. Civil stays a single glyph (✈️ / 🚁); military reads
+// 🪖✈️ / 🪖🚁. The compound is wrapped in .micon so CSS shrinks it to fit the slot.
+const acIcon=f=>f.properties.heli?'🚁':'✈️';
+const milIcon=f=>'<span class="micon">🪖'+(f.properties.heli?'🚁':'✈️')+'</span>';
 // hexes currently squawking an emergency — the same airframe also appears in
 // the civil/military feeds, so those cards filter against this set (the 🚨
 // card is the one card for that aircraft). Rebuilt at the top of sitrepTick.
@@ -1398,10 +1438,10 @@ const CATS=[
    // + the card colour, so repeating it here is noise). '' if no end time known.
    detail:f=>{const e=f.properties.ends,d=e&&new Date(e);
      return d&&!isNaN(d)?'til '+d.toLocaleTimeString([],Object.assign({hour:'numeric',minute:'2-digit'},tzOpt())):'';}},
-  {src:'nearair', hazard:false, air:true, icon:'✈️', cls:()=>'', filter:notSos,
+  {src:'nearair', hazard:false, air:true, icon:acIcon, cls:()=>'', filter:notSos,
    head:f=>cut(f.properties.flight||f.properties.hex||'?',12),
    sub:acSub, detail:ALT},
-  {src:'mil', hazard:false, air:true, icon:'🪖', cls:()=>'alert', filter:notSos,
+  {src:'mil', hazard:false, air:true, icon:milIcon, cls:()=>'alert', filter:notSos,
    head:f=>cut(f.properties.flight||f.properties.hex||'?',10),
    sub:acSub, detail:ALT},
   // FAA airspace RESTRICTIONS that gate a drone — each in-view zone is a
@@ -1664,7 +1704,7 @@ function sitrepTick(){
     // (red, flashing) while it's low + in range; it reverts automatically once
     // it's no longer in breachInfo. One card per plane, never two.
     if(cfg.air && breachInfo.has(acKey(f.properties))){
-      cls='danger'; flash=true; hazardOv=true; icOv='🛩️';
+      cls='danger'; flash=true; hazardOv=true; icOv=f.properties.heli?'🚁':'🛩️';
       // l2 is the callsign (the headline is now LOW AIRCRAFT); the ground speed
       // rides l3 after the AGL, the same as every other plane card below.
       headOv='LOW AIRCRAFT';
