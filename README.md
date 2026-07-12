@@ -63,9 +63,10 @@ low-aircraft warning net (see LOW AIRCRAFT below) — the same 3× radius the zo
 cap uses, so one knob keeps them in lock-step. Zoom is capped so the range ring
 never exceeds ⅓ of the view — and the cap tracks the ring **both ways**: shrink
 the range and you can zoom in further; widen it and the camera eases back out.
-Both the range ring and the range control's own outline are tinted to the
+The range ring and the range control's RANGE / miles text are tinted to the
 current verdict — green clear, amber reduced/unverified, red grounded — so the
-one-glance colour reaches the map even when the panel is off-screen.
+one-glance colour reaches the map even when the panel is off-screen (the
+control's own box border stays white).
 
 ## The SITREP cards
 

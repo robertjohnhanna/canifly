@@ -214,10 +214,10 @@
   #ctrl-wrap{position:absolute;z-index:16;left:calc(16px + var(--sa-l));
     right:calc(376px + var(--sa-r));bottom:16px;display:flex;justify-content:center;
     pointer-events:none}
-  /* --sev is the SITREP verdict colour (green/amber/red); sitrepTick sets it on
-     this box so the border AND the RANGE / miles text all track the verdict. */
+  /* --sev is the SITREP verdict colour (green/amber/red), set on this box by
+     sitrepTick; the RANGE / miles text tracks it. The border stays plain white. */
   #ctrlbar{pointer-events:auto;height:42px;display:flex;align-items:center;gap:7px;padding:0 9px;
-    background:var(--panel);border:1px solid var(--sev,#fff);border-radius:9px;
+    background:var(--panel);border:1px solid #fff;border-radius:9px;
     color:#fff;font-family:var(--mono);font-size:13px;font-weight:700;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
   /* the label and value each fill (and centre within) their segment — RANGE
