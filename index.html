@@ -290,19 +290,19 @@
   <circle cx="15" cy="15" r="1.3" fill="#fff"/>
 </svg>
 
-<!-- SITREP briefing panel (right) — top to bottom: the canifly chart, the
-     settings box, then the SITREP header + cards. Interactive bits up top, the
-     scrollable card list at the bottom for thumb reach. -->
+<!-- SITREP briefing panel (right) — top to bottom: the SITREP title + refresh
+     timer, then the canifly chart, the settings box, then the SITREP cards. The
+     scrollable card list stays at the bottom for thumb reach. -->
 <div id="sitrep" class="panel">
+  <div id="sit-head">
+    <span class="title" id="sit-title">◈ SITREP</span>
+    <span id="refresh-badge" title="time to next data refresh"><b id="refresh-count">30</b>s to update</span>
+  </div>
   <!-- canifly drone-preflight chart — the flyability grid, driven by the
        map-centre crosshair on the same unified data-refresh pulse. -->
   <div id="fly-pane">
     <div id="fly-board" class="board" role="group" aria-label="Can I Fly? drone preflight"></div>
     <div id="fly-settings" class="fset" aria-label="Preflight settings"></div>
-  </div>
-  <div id="sit-head">
-    <span class="title" id="sit-title">◈ SITREP</span>
-    <span id="refresh-badge" title="time to next data refresh"><b id="refresh-count">30</b>s to update</span>
   </div>
   <div id="sit-body">
     <div class="sit-empty">ACQUIRING POSITION…</div>
