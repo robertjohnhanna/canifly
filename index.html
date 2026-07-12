@@ -887,9 +887,11 @@ const iconSize=base=>['interpolate',['linear'],['zoom'],2,base*1.4,6,base*2.2,11
 // burst of near-simultaneous layer updates recomputes it once, not N times.
 let sitrepRefreshT=null;
 // The canifly chart repaints on the same debounce: its TRFC traffic cells read
-// the aircraft layers, so fresh plane data must reach both views together.
+// the aircraft layers, so fresh plane data must reach both views together. The
+// chart paints FIRST so the SITREP tick can colour its title from the chart's
+// freshly-computed NOW column (grounded → red, reduced ceiling → yellow).
 function scheduleSitrep(){ clearTimeout(sitrepRefreshT); sitrepRefreshT=setTimeout(()=>{
-  try{sitrepTick();}catch(e){} try{if(FLY.data)flyPaint();}catch(e){} },300); }
+  try{if(FLY.data)flyPaint();}catch(e){} try{sitrepTick();}catch(e){} },300); }
 
 // Ground elevation (ft AMSL) at a point, for AGL = baro-alt − ground. Keyless
 // Open-Meteo lookup, cached by ~0.01° cell (≈1 km, so every plane inside the
@@ -1525,8 +1527,13 @@ async function sitrepTick(){
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
   cards.push(wxCard());                // weather forecast — always the bottom card
 
-  // title severity from HAZARD cards only: 0 none · 1 alert (amber) · 2 warn (red)
+  // title severity: 0 none · 1 alert (amber) · 2 warn (red). Driven by the
+  // flyability NOW column FIRST — any grounding value/condition reds it, any
+  // reduced ceiling (below the 400 ft cap) yellows it — then raised further by
+  // any hazard card (emergency / severe warning / restriction) in range.
   let titleSev=0;
+  const g0=FLY.detail&&FLY.detail.grid&&FLY.detail.grid[0];
+  if(g0) titleSev=g0.grounded?2:(g0.maxFly<SPEC.regFt?1:0);
   cards.forEach(cd=>{ if(cd[6]) titleSev=Math.max(titleSev,cd[0]==='danger'?2:cd[0]==='alert'?1:0); });
   if(myGen!==sitrepGen) return; // a newer tick superseded this one — don't clobber
   const t=$('#sit-title'); t.classList.remove('warn','alert');
