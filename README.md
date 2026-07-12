@@ -221,13 +221,16 @@ are the **SITREP cards** (which run their own fly-to / open action) and the
 **refresh dial** (which refreshes without dismissing). No drag, no snap points —
 one tap flips the page, and each page gets the whole screen. The panel uses the
 dynamic viewport height so it never spills below Safari's address bar. This
-two-page toggle is **portrait-only** — a phone in **landscape** is wide enough for
-the docked-right panel, so it falls through to the same layout as a tablet or
-desktop. Because the panel's **refresh dial** (see below) is hidden while you're
-on the map page, a duplicate sits at the map's top-right in portrait so it's
-always reachable — and the **CANIFLY verdict** is mirrored at the map's
-**bottom-left**, carrying the same green/amber/red colour and breach-flash as the
-header title, so the one-glance go/no-go reaches you without flipping to the panel.
+two-page toggle is **portrait-only**. A phone in **landscape** keeps the
+docked-right panel (chart + cards) but **drops its header** to reclaim the short
+landscape height: the CANIFLY verdict, refresh dial and lock control move onto the
+**map's corners** instead (bottom-left / top-right / bottom-right). A tablet or
+desktop in landscape is far taller, so it keeps the full docked layout with the
+header. Because the panel's **refresh dial** (see below) is hidden while you're on
+the map page (portrait) or in the header (dropped in landscape), a duplicate sits at
+the map's **top-right** so it's always reachable — and the **CANIFLY verdict** is
+mirrored at the map's **bottom-left**, carrying the same green/amber/red colour and
+breach-flash as the header title, so the one-glance go/no-go always reaches you.
 
 A **refresh dial** — a circular sweep that fills over the 15 s cycle (a
 numberless countdown ring) — sits at the top-right of the panel header; it

@@ -90,7 +90,8 @@
      less countdown); tap = refresh now. While a feed is fetching it spins (a
      rotating arc), folding in the old load spinner. Two instances share .rdial:
      one right-justified in the SITREP header, and a duplicate at the map's
-     top-right shown only on an iPhone in PORTRAIT (map OR panel visible, not both). */
+     top-right shown on an iPhone (portrait's map page, and landscape where the
+     header is dropped) so the countdown / tap-to-refresh stays reachable. */
   .rdial{position:relative;width:24px;height:24px;flex:0 0 auto;border:none;background:none;
     padding:0;cursor:pointer;color:var(--ink-dim);-webkit-user-select:none;user-select:none}
   .rdial .rdial-prog{position:absolute;inset:0;border-radius:50%;
@@ -166,10 +167,11 @@
      !important (which would otherwise beat the acflash animation below). */
   #sit-head .title.alert{color:var(--warn)}
   #sit-head .title.warn{color:var(--danger)}
-  /* CANIFLY verdict tag mirrored at the map's bottom-left (iPhone portrait only, the
-     map page) — same green/amber/red + breach-flash as the header title. Its colour
-     rules sit here, BEFORE the acflash rule, so the flash animation still wins during
-     a breach. sitrepTick stamps the same classes on it and #sit-title together. */
+  /* CANIFLY verdict tag mirrored at the map's bottom-left (iPhone portrait's map
+     page, and landscape where the header is dropped) — same green/amber/red +
+     breach-flash as the header title. Its colour rules sit here, BEFORE the acflash
+     rule, so the flash animation still wins during a breach. sitrepTick stamps the
+     same classes on it and #sit-title together. */
   #map-title{position:absolute;z-index:16;left:calc(14px + var(--sa-l));
     bottom:calc(var(--sa-b) + 14px);display:none;pointer-events:none;
     color:var(--accent);font-size:15px;letter-spacing:2px;font-weight:700;
@@ -265,6 +267,16 @@
     #loc-btn{right:calc(14px + var(--sa-r));bottom:calc(var(--sa-b) + 14px)}
     #map-attrib{right:0;bottom:calc(var(--sa-b) + 2px)}
   }
+  /* ---------- iPhone LANDSCAPE: keep the docked-right panel (chart + cards) but drop
+     its HEADER — the CANIFLY verdict, refresh dial and lock control move onto the
+     map's corners to reclaim the short landscape height. The max-height gate targets
+     phones (≤ ~430px tall in landscape), not tablets/desktops (far taller). */
+  @media (orientation:landscape) and (max-height:500px){
+    #sit-head{display:none}                                       /* header gone */
+    #map-title{display:block}                                     /* CANIFLY → map bottom-left */
+    #map-refresh{display:block;right:calc(376px + var(--sa-r))}   /* refresh dial → map top-right (clear the panel) */
+    #loc-btn{bottom:calc(var(--sa-b) + 14px)}                     /* lock → map bottom-right, above the home bar */
+  }
 </style>
 </head>
 <body>
@@ -308,9 +320,10 @@
   <span class="rdial-prog"></span>
 </button>
 
-<!-- CANIFLY verdict tag mirrored at the map's bottom-left — shown only on an iPhone
-     in portrait so the at-a-glance verdict colour reaches you while the panel is
-     off-screen. sitrepTick keeps its colour/flash in sync with the header title. -->
+<!-- CANIFLY verdict tag mirrored at the map's bottom-left — shown on an iPhone
+     (portrait's map page, and landscape where the header is dropped) so the
+     at-a-glance verdict colour is always reachable. sitrepTick keeps its
+     colour/flash in sync with the header title. -->
 <div id="map-title" aria-hidden="true">◈ CANIFLY</div>
 
 <!-- center-on-me / lock control — a single button in the map's bottom-right
