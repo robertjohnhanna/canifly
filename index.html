@@ -1755,10 +1755,11 @@ function sitrepTick(){
     // it's no longer in breachInfo. One card per plane, never two.
     if(cfg.air && breachInfo.has(acKey(f.properties))){
       cls='danger'; flash=true; hazardOv=true; icOv='🛩️';
-      // sub line: callsign + ground speed (kt) — how fast the low traffic is
-      // crossing your area. spd is ADS-B ground speed; omitted when unknown.
-      const spd=f.properties.spd;
-      const spdTxt=(spd!=null&&spd!=='?'&&spd!=='')?' · '+spd+U(' kt',true):'';
+      // sub line: callsign + ground speed in MPH — how fast the low traffic is
+      // crossing your area. spd is ADS-B ground speed (kt), converted; omitted
+      // when unknown.
+      const spd=Number(f.properties.spd);
+      const spdTxt=isFinite(spd)?' · '+Math.round(toMph(spd))+U(' mph'):'';
       headOv='LOW AIRCRAFT';
       subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12)+spdTxt;
       det=breachInfo.get(acKey(f.properties));
