@@ -225,7 +225,9 @@ two-page toggle is **portrait-only** — a phone in **landscape** is wide enough
 the docked-right panel, so it falls through to the same layout as a tablet or
 desktop. Because the panel's **refresh dial** (see below) is hidden while you're
 on the map page, a duplicate sits at the map's top-right in portrait so it's
-always reachable.
+always reachable — and the **CANIFLY verdict** is mirrored at the map's
+**bottom-left**, carrying the same green/amber/red colour and breach-flash as the
+header title, so the one-glance go/no-go reaches you without flipping to the panel.
 
 A **refresh dial** — a circular sweep that fills over the 15 s cycle (a
 numberless countdown ring) — sits at the top-right of the panel header; it
