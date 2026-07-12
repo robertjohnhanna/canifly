@@ -46,7 +46,10 @@ code in the cell where the limit bites:
 "clear". Unknown inputs fail *open* for the grid values but amber the NOW
 header (hover for which inputs are unverified) and the SITREP title. The FAA
 airspace query hard-throws on anything that could understate a restriction
-(wrong units, truncated results, missing ceilings).
+(wrong units, truncated results, missing ceilings). When a gate input stays
+unverified past a short grace window, a **📡 DATA card** spells out which feeds
+are stale (see the SITREP cards) — amber while the chart still renders from
+last-good data, red when there's no verdict at all.
 
 The bold altitude label marks the highest currently flyable row. **Max wind**
 (±1 mph) is set in the **settings box** below the chart; **range** (±0.5 mi,
@@ -82,6 +85,13 @@ context cards):
   column because a geomagnetic storm degrades the GPS/compass a drone relies on.
   Pinned and always **red** — whenever it shows, it *is* a grounding condition —
   and it reads the same `kpNow` the chart's KP gate uses, so card and chart agree.
+- 📡 **DATA** — the flyability gates fail *open*, so an unverifiable feed keeps
+  its last-good value and only ambers the NOW header quietly. If a feed stays
+  stale past a ~35 s grace window (a self-healing blip won't pop it), this card
+  names the stale feeds: **amber** while the chart still renders from last-good
+  data, **red** ("data unavailable") when there's no NOW verdict at all — the
+  case that also reddens the title. Tap it to force a refresh; it clears the
+  moment every feed is fresh.
 - 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
   ⛔/⚠️ FAA restrictions (defense, prohibited, security, MOA, stadium…) ·
   🏞️ NPS land · 🗼 controlled airspace (Class B/C/D/E) · ✈️ / 🪖 civil and

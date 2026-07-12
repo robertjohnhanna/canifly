@@ -1671,6 +1671,23 @@ function sitrepTick(){
       'GPS / compass unreliable',openBtn(SWPC),true]);
   }
 
+  // -- DATA HEALTH (pinned): the flyability gates fail OPEN — an unverifiable feed
+  //    keeps its last-good value and only ambers the NOW header quietly. This card
+  //    surfaces that explicitly (and touch-accessibly, unlike the hover tooltip)
+  //    once a feed has been stale past the grace window: AMBER while the chart
+  //    still renders from last-good data, RED when there's no NOW verdict at all
+  //    (weather never loaded → flying blind; this is what reddens the title in a
+  //    total outage the chart alone can't express). Tap to force a refresh;
+  //    clears the moment every feed is fresh. --
+  const dataBad=flyUnknownStable();
+  if(dataBad.length){
+    const listTxt=cut(dataBad.join(' · '),30);
+    if(!FLY.data) cards.push(['danger','📡','DATA UNAVAILABLE',listTxt||'no flight data',
+      'tap to retry','data-act="refresh"',true]);
+    else cards.push(['alert','📡','DATA UNVERIFIED',listTxt,
+      'tap to retry','data-act="refresh"',true]);
+  }
+
   // -- GENERAL context cards (area-wide, not a single map point). Collected here
   //    but appended at the BOTTOM of the pile (after the distance-sorted items) —
   //    they're background context, not the nearest thing to the crosshair. --
@@ -1805,6 +1822,7 @@ function handleAct(btn){
       gl.flyTo({center:[lo,la],zoom:Math.max(gl.getZoom(),9)}); }
     if(MQ_MOBILE.matches) openSheet('');
   } else if(act==='open'&&btn.dataset.url){ window.open(btn.dataset.url,'_blank','noopener'); }
+  else if(act==='refresh'){ forceRefresh(); }   // DATA card → force a full refresh
 }
 $('#sit-body').addEventListener('click',e=>{ const b=e.target.closest('[data-act]'); if(b) handleAct(b); });
 // Viewport-scoped feeds refetch for the new area whenever the visible bounds
@@ -2112,12 +2130,29 @@ const FLY={
 };
 // Gate inputs currently UNKNOWN (fetch failed / stale beyond fallback). Every
 // unknown fails OPEN for the grid values, so it MUST be surfaced: the NOW
-// header + the SITREP title amber while any input is unverified.
+// header + the SITREP title amber IMMEDIATELY while any input is unverified
+// (the quiet signal).
+const FLY_ERR_LABEL={om:'weather',asp:'FAA airspace',kp:'Kp',radar:'radar'};
 function flyUnknown(){
-  return [FLY.err.om&&'weather',FLY.err.asp&&'FAA airspace',
-    FLY.err.kp&&'Kp',FLY.err.radar&&'radar'].filter(Boolean);
+  return Object.keys(FLY_ERR_LABEL).filter(k=>FLY.err[k]).map(k=>FLY_ERR_LABEL[k]);
 }
-window.__sitrep.fly={FLY,SPEC,LIM,RNG,paint:flyPaint,refresh:flyRefresh};   // debug/test handle
+// The LOUD signal — the DATA card. A feed only counts here after it's stayed
+// unverified past a grace window, so a single self-healing 30s blip (which the
+// amber NOW header already flags quietly) doesn't pop a card. flyErrSince stamps
+// when each input started erroring; a key that recovers resets to 0.
+const DATA_ERR_GRACE_MS=35000;   // ~1 refresh cycle + a retry
+const flyErrSince={om:0,asp:0,kp:0,radar:0};
+function flyUnknownStable(){
+  const now=Date.now(), out=[];
+  for(const k in FLY_ERR_LABEL){
+    if(FLY.err[k]){
+      if(!flyErrSince[k]) flyErrSince[k]=now;
+      if(now-flyErrSince[k]>=DATA_ERR_GRACE_MS) out.push(FLY_ERR_LABEL[k]);
+    } else flyErrSince[k]=0;
+  }
+  return out;
+}
+window.__sitrep.fly={FLY,SPEC,LIM,RNG,paint:flyPaint,refresh:flyRefresh,unknownStable:flyUnknownStable};   // debug/test handle
 
 // Hard airspace restriction under the crosshair, read from the loaded map layer:
 // a Prohibited area (PROH) or a national-security UAS zone (NSUF) that grounds the
