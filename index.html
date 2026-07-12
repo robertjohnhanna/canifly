@@ -216,11 +216,16 @@
   .sit-row.acflash .s1{animation:acflash .9s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){
     #sit-title.acflash,.sit-row.acflash .s1{animation:none}}
-  /* Combined bottom-right control: range steppers + center-on-me, in one box
-     styled like the original center-on-me button (accent border, dark blurred
-     bg, 42px tall, same corner). Layout: (−) RANGE ⌖ n.n MI (+). */
-  #ctrlbar{position:absolute;z-index:16;right:calc(334px + var(--sa-r));bottom:16px;
-    height:42px;display:flex;align-items:center;gap:7px;padding:0 9px;
+  /* Combined control: range steppers + center-on-me, in one box styled like the
+     original center-on-me button (accent border, dark blurred bg, 42px tall).
+     Layout: (−) RANGE ⌖ n.n MI (+). Centred at the bottom of the visible map:
+     the wrap spans the map area (left of the 320px panel on desktop; full width
+     on mobile) and centres the box, with pointer-events passing through the wrap
+     so only the box itself is interactive. */
+  #ctrl-wrap{position:absolute;z-index:16;left:calc(16px + var(--sa-l));
+    right:calc(336px + var(--sa-r));bottom:16px;display:flex;justify-content:center;
+    pointer-events:none}
+  #ctrlbar{pointer-events:auto;height:42px;display:flex;align-items:center;gap:7px;padding:0 9px;
     background:var(--panel);border:1px solid var(--accent);border-radius:9px;
     color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:700;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
@@ -243,12 +248,10 @@
   #ctrlbar .cb-btn.cb-plus::after{width:2px;height:11px}
   #ctrlbar .cb-btn:active{background:var(--accent)}
   #ctrlbar .cb-btn:active::before,#ctrlbar .cb-btn:active::after{background:#00140a}
-  /* data-loading ring: bottom-left of the map, fades in + spins while any feed is
-     fetching (initial load, the 30s pulse, a pan refetch), fades out when idle */
-  /* bottom:26px vertically centres the 22px ring within the 42px #ctrlbar band
-     (16 + (42−22)/2), so the loading ring and the range/center-on-me box sit on
-     the same line across the bottom of the map */
-  #load-ring{position:absolute;z-index:16;left:calc(16px + var(--sa-l));bottom:26px;
+  /* data-loading ring: TOP-LEFT corner of the map, fades in + spins while any
+     feed is fetching (initial load, the 30s pulse, a pan refetch), fades out when
+     idle. Sits below the safe-area inset so a notch never clips it. */
+  #load-ring{position:absolute;z-index:16;left:calc(16px + var(--sa-l));top:calc(var(--sa-t) + 16px);
     width:22px;height:22px;border:2.5px solid #2a3a4d;border-top-color:var(--accent);
     border-radius:50%;opacity:0;transition:opacity .3s;pointer-events:none;
     filter:drop-shadow(0 0 3px #000)}
@@ -326,9 +329,10 @@
       transition:none;
       box-shadow:0 -12px 40px #000a}
     .panel.open{transform:translateY(0);visibility:visible}
-    /* map is full-width on mobile; keep the controls above the bottom nav */
-    #ctrlbar{right:calc(14px + var(--sa-r));bottom:calc(var(--navh) + var(--sa-b) + 14px)}
-    #load-ring{left:calc(14px + var(--sa-l));bottom:calc(var(--navh) + var(--sa-b) + 24px)}
+    /* map is full-width on mobile; centre the control above the bottom nav */
+    #ctrl-wrap{left:calc(14px + var(--sa-l));right:calc(14px + var(--sa-r));
+      bottom:calc(var(--navh) + var(--sa-b) + 14px)}
+    #load-ring{left:calc(14px + var(--sa-l));top:calc(var(--sa-t) + 12px)}
     /* full map width, sat just above the bottom nav */
     #map-attrib{right:0;bottom:calc(var(--navh) + var(--sa-b) + 3px)}
   }
@@ -371,17 +375,18 @@
 <!-- data-loading ring: spins in the bottom-left of the map while any feed is fetching -->
 <div id="load-ring" aria-hidden="true" title="loading data…"></div>
 
-<!-- combined control (bottom-right): range steppers + center-on-me in one box,
-     styled like the original center-on-me button. Layout: (−) RANGE ⌖ n.n MI (+).
-     rng-val text is refreshed by flyRenderRange(); the ± and value keep the same
-     ids the delegated stepper handler drives; the ⌖ button keeps id loc-btn. -->
-<div id="ctrlbar">
+<!-- combined control, centred at the bottom of the map: range steppers +
+     center-on-me in one box styled like the original center-on-me button.
+     Layout: (−) RANGE ⌖ n.n MI (+). rng-val text is refreshed by flyRenderRange();
+     the ± and value keep the same ids the delegated stepper handler drives; the
+     ⌖ button keeps id loc-btn. -->
+<div id="ctrl-wrap"><div id="ctrlbar">
   <button type="button" class="cb-btn" id="rng-minus" aria-label="Decrease range half a mile"></button>
   <span class="cb-label">range</span>
   <button id="loc-btn" title="center map on my location" aria-label="center on my location"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 1.5v3.4M12 19.1v3.4M1.5 12h3.4M19.1 12h3.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
   <span class="cb-val" id="rng-val" role="button" tabindex="0" title="Tap to reset range">1.0 mi</span>
   <button type="button" class="cb-btn cb-plus" id="rng-plus" aria-label="Increase range half a mile"></button>
-</div>
+</div></div>
 
 <!-- mobile bottom navigation (data-p stays the internal panel id) -->
 <div id="mnav">
