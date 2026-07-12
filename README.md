@@ -74,9 +74,10 @@ context cards):
   (AGL = QNH-corrected altitude − ground elevation under that plane; see below),
   that plane's own card transforms into the red flashing LOW AIRCRAFT alert and
   sorts to the top; it reverts to the normal ✈️/🪖/🚨 card the moment it
-  climbs out or leaves. The card shows the callsign and **ground speed** plus its
-  AGL and bearing. Always exactly one card per plane. The same deduped collector
-  feeds the chart's TRFC cells, so card, chart and map halo agree.
+  climbs out or leaves. Always exactly one card per plane. The same deduped
+  collector feeds the chart's TRFC cells, so card, chart and map halo agree.
+  Every plane card — civil, military, emergency and low-aircraft — shows its
+  ADS-B **ground speed** (MPH) on line 3, right after the altitude.
 - ⛔ **FAA NO-FLY / FAA CEILING** — surfaces the chart's own airspace gate: it
   reads the exact `aspCapFt` the flyability chart's FAA column computes (the
   FAA LAANC UASFM grid + defense TFRs swept over the range ring), so the card

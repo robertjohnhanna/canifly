@@ -1663,13 +1663,10 @@ function sitrepTick(){
     // it's no longer in breachInfo. One card per plane, never two.
     if(cfg.air && breachInfo.has(acKey(f.properties))){
       cls='danger'; flash=true; hazardOv=true; icOv='🛩️';
-      // sub line: callsign + ground speed in MPH — how fast the low traffic is
-      // crossing your area. spd is ADS-B ground speed (kt), converted; omitted
-      // when unknown.
-      const spd=Number(f.properties.spd);
-      const spdTxt=isFinite(spd)?' · '+Math.round(toMph(spd))+U(' mph'):'';
+      // l2 is the callsign (the headline is now LOW AIRCRAFT); the ground speed
+      // rides l3 after the AGL, the same as every other plane card below.
       headOv='LOW AIRCRAFT';
-      subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12)+spdTxt;
+      subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12);
       det=breachInfo.get(acKey(f.properties));
     }
     // Controlled-airspace cards (Class B/C/D/E) are hazard:false, so their
@@ -1713,8 +1710,12 @@ function sitrepTick(){
     // through, so the feed can't inject into the style attribute.
     const rawCol=cfg.src==='airspace'&&!flash?f.properties._col:null;
     const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
-    cards.push([cls, ic, head, sub,
-      (inside?'overhead':dirMi(pt[1],pt[0]))+(detTxt?' · '+detTxt:''),
+    // Every plane card (civil / military / emergency / low-aircraft) carries its
+    // ADS-B ground speed on line 3, AFTER the altitude — spd is knots, shown MPH,
+    // omitted when unknown ('?'/NaN).
+    let l3=(inside?'overhead':dirMi(pt[1],pt[0]))+(detTxt?' · '+detTxt:'');
+    if(cfg.air){ const s=Number(f.properties.spd); if(isFinite(s)) l3+=' · '+Math.round(toMph(s))+U(' mph'); }
+    cards.push([cls, ic, head, sub, l3,
       llBtn(flyPt[0],flyPt[1]), hazardOv!=null?hazardOv:cfg.hazard, flash?true:undefined, col]);
   });
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
