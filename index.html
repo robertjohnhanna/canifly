@@ -1336,12 +1336,30 @@ async function locate(){
 // tracking the real position; watchPosition's first callback is the initial GPS
 // fix, so it replaces the old one-shot getCurrentPosition. Started once; ignored
 // on repeat calls or when geolocation is unavailable/denied.
+// Raw GPS jitters even when you're standing still, so every fix passes through
+// onGeoFix first: (4) an ACCURACY GATE drops obvious garbage, and the position is
+// EMA-SMOOTHED so the dot glides instead of twitching. A fix far from the smoothed
+// point is a real move → snap (no lag). The map-follow DEADBAND lives in setUserFix.
+const GEO_ACC_MAX_M=100;   // drop GPS fixes reported worse than this (m) — kills spikes
+const GEO_EMA=0.25;        // dot low-pass factor (0 = frozen, 1 = raw/no smoothing)
+const GEO_JUMP_KM=0.05;    // a fix >50 m from the smoothed point = real move → snap, no lag
+const GEO_FOLLOW_DEADBAND_KM=0.018;   // locked map recenters only past ~18 m — kills the fidget
+let _emaLat=null,_emaLon=null;
+function onGeoFix(lat,lon,acc){
+  if(acc!=null && acc>GEO_ACC_MAX_M) return;                       // (4) accuracy gate
+  if(_emaLat==null || havKm(_emaLat,_emaLon,lat,lon)>GEO_JUMP_KM){ // bootstrap / real move → snap
+    _emaLat=lat; _emaLon=lon;
+  } else {                                                          // stationary jitter → smooth
+    _emaLat+=GEO_EMA*(lat-_emaLat); _emaLon+=GEO_EMA*(lon-_emaLon);
+  }
+  setUserFix(_emaLat,_emaLon,'gps',null);
+}
 let geoWatchId=null;
 function startGeoWatch(){
   if(geoWatchId!=null||!navigator.geolocation) return;
   try{
     geoWatchId=navigator.geolocation.watchPosition(
-      pos=>setUserFix(pos.coords.latitude,pos.coords.longitude,'gps',null),
+      pos=>onGeoFix(pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy),
       ()=>{},{enableHighAccuracy:true,timeout:10000,maximumAge:5000});
   }catch(e){}
 }
@@ -1418,10 +1436,15 @@ function setUserFix(lat,lon,src,meta){
     // first fix: one clean animation to the 3×-range-ring view
     flyToRadiusMi(lat,lon,ringViewMi());
   } else if(locMode===2){
-    // FOLLOW-LOCKED: keep the crosshair glued to the live position at the current
-    // zoom (so the whole SITREP/chart tracks where you actually are).
-    cancelCenterZoom();
-    gl.easeTo({center:[lon,lat],duration:500});
+    // FOLLOW-LOCKED: keep the crosshair on the live position at the current zoom
+    // (so the whole SITREP/chart tracks where you actually are) — but only recenter
+    // once you've moved beyond a DEADBAND (1), so residual GPS jitter can't fidget
+    // the map. Inside the deadband the map holds; the dot still updates.
+    const ctr=gl.getCenter();
+    if(havKm(ctr.lat,ctr.lng,lat,lon)>GEO_FOLLOW_DEADBAND_KM){
+      cancelCenterZoom();
+      gl.easeTo({center:[lon,lat],duration:500});
+    }
   } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>8){
     // GPS refined the IP guess by a lot (>8 km): re-frame at the precise spot.
     // Re-framing (not easeTo) so the final ZOOM is always the right one — easeTo
