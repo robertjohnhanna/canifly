@@ -211,16 +211,6 @@
     border-radius:50%;opacity:0;transition:opacity .3s;pointer-events:none;
     filter:drop-shadow(0 0 3px #000)}
   #load-ring.on{opacity:.9;animation:sp .8s linear infinite}
-  /* attribution — an OSM/CARTO licence requirement: the compact ⓘ control at the
-     bottom-left of the map, offset right of the data-loading ring, dark-styled.
-     Doubled selectors out-rank MapLibre's own colour rules (dark text would be
-     invisible on the dark pill). */
-  .maplibregl-ctrl-bottom-left{left:calc(44px + var(--sa-l))}
-  .maplibregl-ctrl.maplibregl-ctrl-attrib{background:var(--panel);color:var(--ink-dim);
-    font-family:var(--mono);border:1px solid var(--line);border-radius:6px}
-  .maplibregl-ctrl-attrib.maplibregl-compact-show{background:var(--panel)}
-  .maplibregl-ctrl-attrib a,.maplibregl-ctrl-attrib-inner{color:var(--ink-dim)}
-  .maplibregl-ctrl-attrib-button{filter:invert(.6)}
   /* the same spinner, inline just after the SITREP title (shares updateLoadRing) */
   #sit-load{flex:0 0 auto;width:13px;height:13px;border:2px solid #2a3a4d;
     border-top-color:var(--accent);border-radius:50%;opacity:0;transition:opacity .3s}
@@ -517,8 +507,7 @@ const gl = new maplibregl.Map({
       carto:{ type:'raster', tileSize:256,
         tiles:['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-               'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
-        attribution:'© OpenStreetMap · © CARTO' },
+               'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'] },
       // NEXRAD base-reflectivity mosaic (~1 km, latest) — Iowa State Mesonet,
       // keyless. refreshRadar() rides the 30s pulse (new tiles once per mosaic
       // minute — see radarBust above). Sits above the
@@ -528,7 +517,7 @@ const gl = new maplibregl.Map({
       // bilinearly upsamples that tile so the radar stays smooth instead of
       // showing the blocky server-upscaled tiles you'd get by fetching deeper.
       radar:{ type:'raster', tileSize:256, maxzoom:8,
-        tiles:[RADAR_TILE], attribution:'NEXRAD · Iowa State Mesonet' }
+        tiles:[RADAR_TILE] }
     },
     layers:[{id:'carto',type:'raster',source:'carto'},
       {id:'radar',type:'raster',source:'radar',
@@ -537,10 +526,7 @@ const gl = new maplibregl.Map({
   center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a location fix lands
   renderWorldCopies:true, attributionControl:false
 });
-// No default nav controls — zoom is scroll/pinch and recentre is the ⌖ ME
-// button. Attribution (an OSM/CARTO licence requirement) is the compact ⓘ
-// control at the bottom-left of the map.
-gl.addControl(new maplibregl.AttributionControl({compact:true}),'bottom-left');
+// No on-map controls — zoom is scroll/pinch and recentre is the ⌖ ME button.
 window.__sitrep={map:gl}; // debug/test handle
 
 // Zoom is a SEPARATE action from panning. MapLibre's built-in scroll, double-
