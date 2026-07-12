@@ -19,16 +19,18 @@
      Vanilla JS + MapLibre GL (CDN).
 
      Layout: a full-map canvas with a single docked panel on the right
-     (on mobile, a bottom sheet): the canifly flyability chart + range
-     settings, then a distance-sorted SITREP briefing of everything in
-     the range ring — all driven by the map-centre crosshair.
+     (on iPhone portrait, a full-screen page toggled with the map). The
+     panel has NO header: the flyability chart is its top section, then a
+     distance-sorted SITREP briefing of everything in the range ring — all
+     driven by the map-centre crosshair. The CANIFLY verdict tag, refresh
+     dial and lock control live on the map's corners.
 
      Map layers (all keyless, CORS-*): live aircraft (adsb), NWS
      warnings, NEXRAD radar (Iowa State Mesonet), FAA airspace (Class
      B/C/D + special-use / prohibited / security / stadium restrictions),
-     National Park Service lands, plus a dashed range ring at the crosshair
-     matching the RANGE setting. Card/chart-only feeds: SPC Day-1 outlook,
-     NOAA SWPC space weather (Kp / GOES X-ray).
+     National Park Service lands, plus the fixed 1 mi range ring + 5 mi
+     traffic ring at the crosshair. Card/chart-only feeds: SPC Day-1
+     outlook, NOAA SWPC space weather (Kp / GOES X-ray).
      All sources are keyless with ACAO:* so fetch works cross-origin;
      anything requiring a key is excluded by the keyless rule.
      ============================================================ -->
@@ -78,7 +80,7 @@
   ::-webkit-scrollbar-track{background:transparent}
 
   /* ---------- status badges (in SITREP header) ---------- */
-  /* ---------- SITREP panel (desktop: docked right / mobile: bottom sheet) ----------
+  /* ---------- SITREP panel (desktop: docked right / iPhone portrait: full-screen page) ----------
      The only panel now: header, scrolling cards, then canifly. The
      map fills everything to its left. */
   .panel{position:absolute;z-index:15;background:var(--panel);
@@ -112,13 +114,12 @@
     display:block;background:#000;border-radius:50%;box-shadow:0 0 0 2px #000}
   @media (max-width:1000px) and (orientation:portrait){ #map-refresh{right:calc(14px + var(--sa-r))} }
   /* ---------- canifly — the static drone-preflight chart ----------
-     Ported from the canifly repo (which stays standalone and untouched): just
-     the flyability grid + the settings box, no title/coords/refresh line.
-     The pane is sized to its CONTENT (the chart never changes size) and
-     pinned to the BOTTOM of the panel; the SITREP cards above fill down to its
-     top edge. cq units fall back to the viewport (container-type:normal) so the
-     chart has a deterministic size independent of the pane it lives in; the px
-     caps in the grid rules keep the cells sane from an iPhone to a wide iPad. */
+     The flyability grid, and nothing else — no title/coords/refresh line.
+     The pane is sized to its CONTENT (the chart never changes size) and is the
+     panel's TOP section (its "header"); the SITREP cards scroll below it.
+     cq units fall back to the viewport (container-type:normal) so the chart
+     has a deterministic size independent of the pane it lives in; the px caps
+     in the grid rules keep the cells sane from an iPhone to a wide iPad. */
   #fly-pane{flex:0 0 auto;min-height:0;border-bottom:1px solid var(--line);background:#000;
     container-type:normal;--fti:min(2.4cqh,3.3cqw,12px);
     display:flex;flex-direction:column;align-items:center;
@@ -263,6 +264,9 @@
       transform:translateY(calc(100vh + 40px));
       transition:transform .26s cubic-bezier(.22,.61,.36,1);visibility:visible}
     body.panel-open .panel{transform:translateY(0)}
+    /* the full-screen panel starts at the very top of the screen — pad the CHART (the
+       panel's first section) below the notch / status bar so its top row isn't covered */
+    #fly-pane{padding-top:calc(var(--sa-t) + 10px)}
     #sit-body{padding-bottom:calc(var(--sa-b) + 6px)}
     #fly-board{cursor:pointer}          /* tap the chart to drop back to the map */
     /* the panel is an overlay sheet on mobile, so the center-on-me button sits at
@@ -297,7 +301,7 @@
   <!-- Canonical verdict element: HIDDEN (the on-map #map-title mirrors it) and empty,
        kept out of the visible layout so no "header" can flash before the render-blocking
        CDN stylesheet loads. sitrepTick stamps its warn/alert/acflash class. -->
-  <span class="title" id="sit-title" hidden></span>
+  <span id="sit-title" hidden></span>
   <!-- canifly drone-preflight chart — the flyability grid, driven by the
        map-centre crosshair on the same unified data-refresh pulse. -->
   <div id="fly-pane">
@@ -1301,13 +1305,13 @@ async function locate(){
 // fix, so it replaces the old one-shot getCurrentPosition. Started once; ignored
 // on repeat calls or when geolocation is unavailable/denied.
 // Raw GPS jitters even when you're standing still, so every fix passes through
-// onGeoFix first: (4) an ACCURACY GATE drops obvious garbage, and the position is
+// onGeoFix first: an ACCURACY GATE drops obvious garbage, and the position is
 // EMA-SMOOTHED so the dot glides instead of twitching. A fix far from the smoothed
-// point is a real move → snap (no lag). The map-follow DEADBAND lives in setUserFix.
+// point is a real move → snap (no lag). The locked-map on-target check lives with
+// the lock code (LOCK_ONTARGET_KM).
 const GEO_ACC_MAX_M=100;   // drop GPS fixes reported worse than this (m) — kills spikes
 const GEO_EMA=0.25;        // dot low-pass factor (0 = frozen, 1 = raw/no smoothing)
 const GEO_JUMP_KM=0.05;    // a fix >50 m from the smoothed point = real move → snap, no lag
-const GEO_FOLLOW_DEADBAND_KM=0.018;   // locked map recenters only past ~18 m — kills the fidget
 let _emaLat=null,_emaLon=null;
 function onGeoFix(lat,lon,acc){
   if(acc!=null && acc>GEO_ACC_MAX_M) return;                       // (4) accuracy gate
@@ -1339,34 +1343,50 @@ function setLocIcon(locked){
   b.setAttribute('aria-label',locked?'unlock location follow':'center on my location');
 }
 // The ⌖ button toggles two states, and it STARTS LOCKED:
-//   LOCKED   → UNLOCK      : release the map (icon → crosshair; drag re-enabled),
-//                            the current view is kept.
+//   LOCKED   → UNLOCK      : release the map (icon → crosshair; pan + zoom
+//                            re-enabled), the current view is kept.
 //   UNLOCKED → RESET + LOCK : center on you AND reset the zoom to the 10 mi VIEW
-//                            framing, then re-lock + FOLLOW (icon → padlock, panning
-//                            disabled — zoom still works).
+//                            framing, then re-lock (icon → padlock; pan + zoom
+//                            frozen at that framing).
 // No fix yet → first tap kicks off location. locMode: 0 unlocked · 2 locked.
-// Start LOCKED at 2: load auto-locates, frames on you and follows from the first
-// fix; the first tap UNLOCKS, the next RESETS + re-locks, and so on.
+// Start LOCKED at 2: load auto-locates and frames on you; the first tap UNLOCKS,
+// the next RESETS + re-locks, and so on.
 let locMode=2;
-// LOCKED = a FROZEN map: pan AND zoom are both disabled, so the view is held at the
-// init / reset 10 mi framing and nothing moves it. Unlock to pan or zoom. Programmatic
-// camera moves (our framing animations) still work — user gestures are what's blocked.
+// LOCKED = a FROZEN map HELD ON YOUR LOCATION: every user camera handler (pan, zoom,
+// rotate, pitch) is disabled, so nothing you do moves the view. Unlock to pan or zoom.
+// Programmatic camera moves (our framing animations) still work.
 function setPanLock(on){
-  ['dragPan','scrollZoom','boxZoom','doubleClickZoom','touchZoomRotate','keyboard']
+  ['dragPan','scrollZoom','boxZoom','doubleClickZoom','touchZoomRotate','dragRotate','touchPitch','keyboard']
     .forEach(k=>{ try{ on?gl[k].disable():gl[k].enable(); }catch(e){} });
 }
-// ---- FRAMING GUARD ----------------------------------------------------------
+// ---- FRAMING + LOCK-ON-TARGET -----------------------------------------------
 // frameNow() is the ONE authoritative camera move: it centers on a point AND resets
-// the zoom to the VIEW radius. _framing blocks anything from interrupting that ~1.2s
-// animation (so a click-to-lock zoom reset always lands fully). A frame is a NEW view,
-// so it clears _didInitialLoad → its moveend refetches data around the new spot.
-const FOLLOW_REFRAME_KM=2;   // while locked, only re-frame if a fix is this far off (the IP→GPS settle / a teleport)
-let _framing=false, _frameT=null;
-let _didInitialLoad=false;   // has the first around-you data pull happened? (see refreshViewport)
+// the zoom to the 10 mi VIEW radius. _framing blocks anything from interrupting that
+// ~1.2s animation, so a zoom reset always lands fully.
+//
+// While LOCKED the frame must sit ON YOUR REAL POSITION. Location resolves in stages
+// (IP guess → cold jumpy GPS → settled GPS), so instead of freezing on whatever came
+// first, every fix re-checks: is the crosshair still on the fix? If it has drifted
+// past LOCK_ONTARGET_KM, ONE re-frame is scheduled ~1s out and re-checked against the
+// LATEST fix when it fires — a jumpy cold start converges in a single clean move and
+// then the map holds dead still (GPS jitter stays far inside the threshold).
+const LOCK_ONTARGET_KM=0.12;   // crosshair within this of the fix = "on you", hold still
+let _framing=false, _frameT=null, _lockReframeT=null;
 function frameNow(lat,lon){
-  _framing=true; _didInitialLoad=false; clearTimeout(_frameT);
+  _framing=true; clearTimeout(_frameT);
   flyToRadiusMi(lat,lon,VIEW_MI);
   _frameT=setTimeout(()=>{ _framing=false; },1300);   // fitBounds is 1200ms + a small buffer
+}
+function lockOffTarget(){
+  if(USER.lat==null) return false;
+  const c=gl.getCenter();
+  return havKm(c.lat,c.lng,USER.lat,USER.lon)>LOCK_ONTARGET_KM;
+}
+function scheduleLockReframe(){
+  if(_framing||_lockReframeT||!lockOffTarget()) return;
+  _lockReframeT=setTimeout(()=>{ _lockReframeT=null;
+    if(locMode===2 && !_framing && lockOffTarget()) frameNow(USER.lat,USER.lon);
+  },900);
 }
 function centerOnMe(){
   if(USER.lat==null){ toast('LOCATING…'); locate(); return; }
@@ -1382,19 +1402,19 @@ $('#loc-btn').addEventListener('click',centerOnMe);
 // first fix frames on you and then the view holds there until you unlock.
 setLocIcon(true); setPanLock(true);
 // ROBUST LOCK: disabling the handlers stops pan + zoom, but some touch platforms
-// (notably iOS Safari) can still nudge the camera via other gestures. As a belt-and-
+// (notably iOS Safari) can still nudge the camera via exotic gestures. As a belt-and-
 // braces guarantee, whenever a USER gesture (originalEvent present) ends the map while
-// locked, snap it straight back to the FROZEN view. We remember that view from the last
-// programmatic move (our framing animations settle with no originalEvent).
-let _lockSnap=false, _frozenCenter=null;
+// locked and off your fix, snap it straight back onto the fix. Programmatic moves
+// (easeTo / fitBounds) carry no originalEvent, so framing animations never trip this —
+// and any data fetch is positionally gated (see refreshViewport), so the moment spent
+// off-target can't load data for the wrong spot either.
+let _lockSnap=false;
 gl.on('moveend',e=>{
-  if(locMode!==2||_lockSnap) return;
-  if(!e||!e.originalEvent){ _frozenCenter=gl.getCenter(); return; }   // programmatic settle = the frozen view
-  if(!_frozenCenter){ _frozenCenter=gl.getCenter(); return; }
+  if(locMode!==2||_lockSnap||_framing||!e||!e.originalEvent||USER.lat==null) return;
   const ctr=gl.getCenter();
-  if(havKm(ctr.lat,ctr.lng,_frozenCenter.lat,_frozenCenter.lng)<=GEO_FOLLOW_DEADBAND_KM) return;
+  if(havKm(ctr.lat,ctr.lng,USER.lat,USER.lon)<=LOCK_ONTARGET_KM) return;
   _lockSnap=true;
-  gl.easeTo({center:[_frozenCenter.lng,_frozenCenter.lat],duration:200});
+  gl.easeTo({center:[USER.lon,USER.lat],duration:200});
   gl.once('moveend',()=>{ _lockSnap=false; });
 });
 
@@ -1443,14 +1463,10 @@ function setUserFix(lat,lon,src,meta){
     // first fix: one clean, guarded animation to the 10 mi VIEW framing
     frameNow(lat,lon);
   } else if(locMode===2){
-    // LOCKED = FROZEN: the map does NOT follow you. It only RE-FRAMES if the fix is far
-    // off the current view (the IP→GPS settle onto your precise spot, or you've
-    // teleported) — so the initial lock lands on your real location — otherwise it holds
-    // dead still (the dot keeps updating). Never re-frame during a framing animation.
-    const ctr=gl.getCenter();
-    if(!_framing && havKm(ctr.lat,ctr.lng,lat,lon)>FOLLOW_REFRAME_KM){
-      frameNow(lat,lon);
-    }
+    // LOCKED: hold the frame ON the (settling) fix — if the crosshair has drifted off
+    // your real position (IP→GPS refine, cold-GPS jump, you moved), one throttled
+    // re-frame converges onto it; on target, the map holds dead still.
+    scheduleLockReframe();
   } else if(src==='gps'&&pLat!=null&&havKm(pLat,pLon,lat,lon)>8){
     // UNLOCKED and GPS refined the IP guess by a lot (>8 km): re-frame at the precise
     // spot (guarded, so the zoom always lands right).
@@ -1939,12 +1955,17 @@ function refreshViewport(){
     // so the panel tracks wherever the map points — scheduleSitrep repaints the chart
     // then ticks the SITREP.
     scheduleSitrep();
-    // But a FOLLOW-LOCKED move is the map trailing your GPS, not you exploring a new
-    // area — so it does NOT pull fresh data (the 15 s refresh pulse keeps aircraft etc.
-    // current around you). Only a manual pan while UNLOCKED refetches for the new area.
-    // The very first pull is allowed through so data appears right after the fix lands.
-    if(locMode===2 && _didInitialLoad) return;
-    _didInitialLoad=true;
+    // LOCKED gate is POSITIONAL, not a flag: data loads only when the view is actually
+    // ON your fix. A stray gesture that momentarily drags the frozen map (before the
+    // snap-back) lands OFF the fix → no fetch for that wrong spot; the frame settling
+    // onto you IS on the fix → fetches. Once loaded, the ~1km-rounded view key below
+    // dedupes repeats and the 15 s pulse keeps data current. UNLOCKED pans always
+    // refetch for the new area.
+    if(locMode===2){
+      if(USER.lat==null) return;   // still locating — the boot fallback covers a no-fix load
+      const c0=gl.getCenter();
+      if(havKm(c0.lat,c0.lng,USER.lat,USER.lon)>LOCK_ONTARGET_KM*2) return;
+    }
     // Only refetch the viewport feeds when the visible area actually changed. Rounding
     // to ~1km + 0.1 zoom collapses jitter so we don't fire redundant ADS-B requests.
     const b=gl.getBounds(),z=gl.getZoom();
@@ -1970,10 +1991,9 @@ gl.on('resize',refreshViewport);
 
 // ---- MOBILE TWO-PAGE TOGGLE — the map and the CANIFLY panel are two full-screen
 //      pages. Tap the map to bring the panel up; tap ANYWHERE on the panel to drop
-//      back to the map — except the SITREP cards (they run their own fly-to/open
-//      action) and the refresh dial (it refreshes without dismissing). No drag, no
-//      peek, no snap points — one tap flips the page. Desktop keeps the docked-right
-//      panel (guarded by MQ). --
+//      back to the map — only a SITREP card is exempt (it runs its own fly-to/open
+//      action). No drag, no peek, no snap points — one tap flips the page. Desktop
+//      keeps the docked-right panel (guarded by MQ). --
 (function panelToggle(){
   const body=document.body;
   const open =()=>{ if(MQ_MOBILE.matches) body.classList.add('panel-open'); };
@@ -1997,19 +2017,18 @@ gl.on('resize',refreshViewport);
 
 /* =====================================================================
    8. CAN I FLY — the canifly drone-preflight chart, FULLY INTEGRATED.
-   Ported from the canifly repo (that app stays standalone and untouched).
-   What's here: the flyability grid (altitudes 400→SFC × NOW/+1/+2/+3h) and
-   the settings box with the max-wind and range steppers — no title,
-   coordinates or refresh line. Location = the map-centre crosshair; data
-   rides the unified refresh pulse (weather + radar sample every pulse,
-   Kp on the 180s space-weather cadence, FAA airspace via a location/range-
-   keyed cache). Two-way integration with the SITREP:
-     • the RANGE setting is also the LOW AIRCRAFT warning radius;
-     • manned traffic inside that range under the warning altitude reds its
+   The flyability grid (altitudes 400→SFC × NOW/+1/+2/+3h) — no title,
+   coordinates, refresh line or settings (all limits/radii are fixed
+   constants). Location = the map-centre crosshair; data rides the unified
+   refresh pulse (weather + radar sample every pulse, Kp on the 180s
+   space-weather cadence, FAA airspace via a location-keyed cache).
+   Two-way integration with the SITREP:
+     • the fixed 1 mi RED ring is also the LOW AIRCRAFT alert radius;
+     • manned traffic inside it under the warning altitude reds its
        altitude cell in the NOW column (its own code: TRFC);
-     • a NEXRAD echo inside that range — sampled from the SAME Iowa Mesonet
-       mosaic the radar layer draws — grounds the NOW column like the other
-       global gates (its own code: PCPN).
+     • a NEXRAD echo inside it — sampled from the SAME Iowa Mesonet
+       mosaic the radar layer draws — grounds the NOW column like the
+       other global gates (its own code: PCPN).
    ===================================================================== */
 const M_TO_FT=3.28084, FT_TO_M=0.3048, M_TO_SM=1/1609.34, KT_TO_MPH=1.15078, MI_TO_KM=1.60934;
 const toMph=kt=>kt==null?null:kt*KT_TO_MPH;

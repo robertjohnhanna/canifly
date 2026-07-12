@@ -256,10 +256,14 @@ icon is a 🔒 padlock; the you-are-here dot still tracks you). The **first tap
 unlocks** (pan + zoom free again, icon back to the crosshair); the **next tap
 centers you and resets the zoom** to the 10 mi view, then re-locks — and the
 two-state toggle repeats (unlock → reset + lock → unlock → …). **Want to zoom out?
-Unlock.** While locked the map only ever **re-frames onto your precise spot** if a
-fix lands far off the current view (the initial IP→GPS settle, or you've teleported)
-— so the first lock lands on your real location — and never during that framing
-animation, so a zoom-reset always lands at the full 10 mi view. As a belt-and-braces
+Unlock.** While locked the frame is kept **on your real position**: location resolves
+in stages (IP guess → cold jumpy GPS → settled GPS), and if the crosshair has drifted
+off the fix past ~120 m, one throttled re-frame converges onto it — checked against
+the *latest* fix so a jumpy cold start lands in a single clean move, never mid-way
+through a framing animation (a zoom-reset always lands at the full 10 mi view). On
+target, the map holds dead still. And data loads are **positionally gated** while
+locked: nothing fetches unless the view is actually on your fix, so a stray gesture's
+momentary drag (before the snap-back) can never load data for the wrong spot. As a belt-and-braces
 guard for touch platforms where disabling the handlers isn't enough, any stray
 gesture that nudges the frozen map snaps it right back to the held view. GPS jitter
 is tamed regardless: fixes reported worse than ~100 m are dropped and the position is
