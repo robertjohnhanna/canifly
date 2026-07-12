@@ -1455,12 +1455,16 @@ const CATS=[
      MOA:'MILITARY OPS AREA',W:'WARNING AREA',A:'ALERT AREA',D:'DANGER AREA',STDM:'STADIUM TFR'}[f.properties.cls]||'AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26),
    detail:f=>f.properties.sev==='hard'?'drones prohibited':f.properties.cls==='STDM'?'during events':'verify NOTAMs'},
-  // Controlled airspace (Class B/C/D + surface E) in range — a NEUTRAL naming
-  // card: drones need LAANC / ATC authorization here, but the class alone isn't
-  // a no-fly. The actual drone-ceiling severity is carried by the FAA CEILING
-  // card (driven by the LAANC grid the chart uses). Deduped below so Class B's
-  // shelves collapse to one.
-  {src:'airspace', hazard:false, ctrl:true, filter:f=>f.properties.sev==='ctrl', icon:'🗼', cls:()=>'',
+  // Controlled airspace (Class B/C/D + surface E) in range — an AMBER caution:
+  // drones need LAANC / ATC authorization here, so it's coloured like other
+  // in-range airspace (not routine white), but the class alone isn't a no-fly,
+  // so it stays amber rather than red. The actual drone-ceiling severity (the
+  // 0-ft / <400-ft no-fly) is still carried by the red/amber FAA CEILING card,
+  // driven by the LAANC grid the chart uses. hazard:false keeps it out of the
+  // title-severity roll-up — the chart's NOW column is the flyability verdict,
+  // not the mere presence of nearby controlled airspace. Deduped below so Class
+  // B's shelves collapse to one.
+  {src:'airspace', hazard:false, ctrl:true, filter:f=>f.properties.sev==='ctrl', icon:'🗼', cls:()=>'alert',
    head:f=>({B:'CLASS B AIRSPACE',C:'CLASS C AIRSPACE',D:'CLASS D AIRSPACE',E:'CLASS E AIRSPACE'}[f.properties.cls]||'AIRSPACE'),
    sub:f=>cut(f.properties.name||'—',26),
    detail:()=>'authorization'},
@@ -1617,12 +1621,12 @@ function sitrepTick(){
       headOv='LOW AIRCRAFT'; subOv=cut(f.properties.flight||f.properties.hex||'aircraft',12);
       det=breachInfo.get(acKey(f.properties));
     }
-    // Controlled-airspace polygon cards (Class B/C/D/E) stay NEUTRAL naming
-    // context ("authorization"): the LAANC-ceiling severity is carried by the
-    // dedicated FAA CEILING card above, which reads the SAME getAirspace result
-    // the chart does — so they can't disagree the way polygon-vs-grid did.
-    // colour drives tier so a breaching plane sorts up with the hazards;
-    // everything else keeps its original hazard/neutral tier.
+    // Controlled-airspace cards (Class B/C/D/E) are amber "authorization"
+    // cautions but hazard:false, so they colour the card without driving the
+    // title or the hazard tier: the LAANC-ceiling severity is carried by the
+    // dedicated FAA CEILING card above (same getAirspace result the chart uses),
+    // so the two can't disagree. colour drives tier so a breaching plane sorts
+    // up with the hazards; everything else keeps its hazard/neutral tier.
     const tier=flash?0:(cfg.hazard?(cls==='danger'?0:1):2);
     let pt, km;
     if(g.type==='Point'){ pt=g.coordinates; km=havKm(lat,lon,pt[1],pt[0]); }
