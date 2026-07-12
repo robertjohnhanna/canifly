@@ -1304,31 +1304,30 @@ function setLocIcon(locked){
   b.title=locked?'following your location — tap to unlock':'center map on my location';
   b.setAttribute('aria-label',locked?'unlock location follow':'center on my location');
 }
-// The ⌖ button cycles a three-state chain: it starts ARMED, then
-//   ARMED → LOCK   : snap onto you + FOLLOW; the crosshair is stuck on the live
-//                    fix (icon → padlock, panning disabled — zoom still works).
-//   LOCK → UNLOCK  : release the map (icon → crosshair; drag re-enabled), view kept.
-//   UNLOCK → RESET : center on you AND reset the zoom to the 15 mi VIEW framing,
-//                    then re-ARM — so the next tap LOCKS again.
-// No fix yet → first tap kicks off location. locMode: 0 unlocked · 1 armed · 2 locked.
-// Start ARMED at 1: load auto-locates + frames on you, so the first tap LOCKS —
-// from there it follows the chain (lock → unlock → reset → lock → …).
-let locMode=1;
+// The ⌖ button toggles two states, and it STARTS LOCKED:
+//   LOCKED   → UNLOCK      : release the map (icon → crosshair; drag re-enabled),
+//                            the current view is kept.
+//   UNLOCKED → RESET + LOCK : center on you AND reset the zoom to the 10 mi VIEW
+//                            framing, then re-lock + FOLLOW (icon → padlock, panning
+//                            disabled — zoom still works).
+// No fix yet → first tap kicks off location. locMode: 0 unlocked · 2 locked.
+// Start LOCKED at 2: load auto-locates, frames on you and follows from the first
+// fix; the first tap UNLOCKS, the next RESETS + re-locks, and so on.
+let locMode=2;
 function setPanLock(on){ try{ on?gl.dragPan.disable():gl.dragPan.enable(); }catch(e){} }
 function centerOnMe(){
   if(USER.lat==null){ toast('LOCATING…'); locate(); return; }
-  if(locMode===1){                 // ARMED → lock: snap onto you + follow
-    cancelCenterZoom();
-    gl.easeTo({center:[USER.lon,USER.lat],duration:400});
-    locMode=2; setLocIcon(true); setPanLock(true);
-  } else if(locMode===2){          // LOCKED → unlock (release the map, keep the view)
+  if(locMode===2){                 // LOCKED → unlock (release the map, keep the view)
     locMode=0; setLocIcon(false); setPanLock(false);
-  } else {                         // UNLOCKED → center + reset zoom to the 15 mi VIEW, re-arm
+  } else {                         // UNLOCKED → center + reset zoom to the 10 mi VIEW, re-lock
     flyToRadiusMi(USER.lat,USER.lon,VIEW_MI);
-    locMode=1; setLocIcon(false);
+    locMode=2; setLocIcon(true); setPanLock(true);
   }
 }
 $('#loc-btn').addEventListener('click',centerOnMe);
+// Engage the lock at load — the app starts following your location (padlock icon,
+// panning disabled). The first fix frames on you and the follow keeps it there.
+setLocIcon(true); setPanLock(true);
 // ROBUST LOCK: dragPan.disable() stops the pan handler, but some touch platforms
 // (notably iOS Safari) can still nudge the camera via other gestures. As a belt-
 // and-braces guarantee, whenever a USER gesture (originalEvent present) ends the
@@ -1387,7 +1386,7 @@ function setUserFix(lat,lon,src,meta){
   // GPS refinement of the IP guess only gently recenters, and only if it moved
   // us far — so the load isn't a stutter of two back-to-back zoom animations.
   if(first){
-    // first fix: one clean animation to the 15 mi VIEW framing
+    // first fix: one clean animation to the 10 mi VIEW framing
     flyToRadiusMi(lat,lon,VIEW_MI);
   } else if(locMode===2){
     // FOLLOW-LOCKED: keep the crosshair on the live position at the current zoom
@@ -1967,9 +1966,9 @@ const LIM={wind:27};
 // The three FIXED radii [statute miles]. RED (the range ring, RNG.mi) = 1 mi VLOS:
 // the FAA query radius, the RED low-aircraft alert, the TRFC chart cap + the PCPN
 // radar-echo radius. GREY = 5 mi: the traffic net (planes tracked + amber low-
-// aircraft heads-up out to here). VIEW = 15 mi (3× grey): the load-framing radius
-// AND the tightest allowed zoom (the view never shows less than this).
-const RED_MI=1, GREY_MI=5, VIEW_MI=15;
+// aircraft heads-up out to here). VIEW = 10 mi (2× grey): the load / reset framing
+// radius AND the tightest allowed zoom (the view never shows less than this).
+const RED_MI=1, GREY_MI=5, VIEW_MI=10;
 const RNG={mi:RED_MI};
 // Altitude ladder, 50 ft steps through the FAA band (matches the grid rows).
 const ALTS_UP=(()=>{const a=[];for(let f=0;f<=SPEC.regFt;f+=50)a.push(f);return a;})();
@@ -2388,7 +2387,7 @@ function flySkeletonHtml(){
   return `<div ${FLY_GRID_ATTRS}>${head}${rows}${gust}</div>`;
 }
 // RANGE and MAX WIND are no longer user-adjustable — the three radii are fixed
-// (RED 1 / GREY 5 / VIEW 15 mi) and LIM.wind is hardcoded to 27 mph — so there's
+// (RED 1 / GREY 5 / VIEW 10 mi) and LIM.wind is hardcoded to 27 mph — so there's
 // no settings box or range control to render; the chart just paints from data.
 function flyRender(){
   const board=$('#fly-board'); if(!board) return;
@@ -2557,8 +2556,8 @@ function updateRing(){
 function scheduleRing(){ if(_ringRaf) return; _ringRaf=requestAnimationFrame(()=>{ _ringRaf=0; updateRing(); }); }
 gl.on('move',scheduleRing);
 
-// Never zoom in tighter than the VIEW radius (15 mi = 3× the grey ring): the view
-// always shows at least a 15-mile-radius extent. We enforce this as a dynamic MAX
+// Never zoom in tighter than the VIEW radius (10 mi = 2× the grey ring): the view
+// always shows at least a 10-mile-radius extent. We enforce this as a dynamic MAX
 // ZOOM — the zoom at which a VIEW_MI-radius box just fills the padded viewport.
 // Zooming in past it is blocked (the center-anchored zoom clamp reads getMaxZoom),
 // and panning north auto-eases the camera back out. Recomputed on latitude change
@@ -2575,7 +2574,7 @@ function enforceRingZoom(){
     +(_pad?[_pad.top,_pad.left,_pad.right,_pad.bottom].join(','):'0');
   if(key===_ringZoomKey) return;
   _ringZoomKey=key;
-  // the fixed 15 mi VIEW radius and the shared °↔km math
+  // the fixed 10 mi VIEW radius and the shared °↔km math
   const {dLat,dLon}=geoDeltas(VIEW_MI*MI_TO_KM,c.lat);
   // cameraForBounds CLAMPS its result to the current maxZoom, so from a locked-in
   // (zoomed-to-the-cap) state it could only ever ratchet the cap DOWN and never

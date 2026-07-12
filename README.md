@@ -66,9 +66,10 @@ limit is hardcoded to **27 mph**:
 - **GREY · 5 mi** — the **light-grey dotted ring**: the traffic net. Every plane
   inside it is tracked, and a *low* one out here raises an **amber** low-aircraft
   heads-up (see LOW AIRCRAFT below).
-- **VIEW · 15 mi** (3× grey) — the load-framing radius the map opens to on a
-  location fix, and the **tightest allowed zoom**: the view never shows less than
-  a 15-mile radius. Pan north and the camera eases back out to hold the cap.
+- **VIEW · 10 mi** (2× grey) — the framing radius the map opens to on a location
+  fix and resets to on the ⌖ button, and the **tightest allowed zoom**: the view
+  never shows less than a 10-mile radius. Pan north and the camera eases back out
+  to hold the cap.
 
 ## The SITREP cards
 
@@ -226,17 +227,17 @@ tap forces an immediate refresh.
 
 On load: instant IP fix (ipwho.is), refined by browser GPS if you allow the
 prompt (denial is silently tolerated), then one clean camera move framing the
-15 mi view. A continuous geolocation **watch** keeps the green **you-are-here
+10 mi view. A continuous geolocation **watch** keeps the green **you-are-here
 dot live** as you move. The ⌖ button lives in the map's **bottom-right corner**
-and **cycles a three-state chain**. Since load already auto-locates and frames on
-you, it starts **armed**: the **first tap locks + follows** — the crosshair
-sticks to your live position (map panning is disabled so you can't drag off
-yourself; zoom still works) and the icon becomes a 🔒 padlock. The next tap
-**unlocks** (releases panning, icon back to the crosshair); the next **centers you
-and resets the zoom** to the 15 mi view, re-arming — then the chain repeats
-(lock → unlock → reset → lock → …). As a belt-and-braces guard for touch platforms
-where disabling the pan handler isn't enough, any stray gesture that nudges the
-map while locked snaps the crosshair straight back onto you. GPS jitter is tamed
+and **starts locked**: the app follows your live position from load — the
+crosshair sticks to you (map panning is disabled so you can't drag off yourself;
+zoom still works) and the icon is a 🔒 padlock. The **first tap unlocks**
+(releases panning, icon back to the crosshair); the **next tap centers you and
+resets the zoom** to the 10 mi view, then re-locks + follows — and the two-state
+toggle repeats (unlock → reset + lock → unlock → …). As a belt-and-braces guard
+for touch platforms where disabling the pan handler isn't enough, any stray
+gesture that nudges the map while locked snaps the crosshair straight back onto
+you. GPS jitter is tamed
 so a locked map doesn't fidget: fixes reported worse than ~100 m are dropped, the
 position is EMA-smoothed so the dot glides, and the follow only recenters once
 you've actually moved ~18 m (a big jump snaps instantly, no lag). Position is
