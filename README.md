@@ -78,6 +78,10 @@ context cards):
   chart is FAA-limited — even where no charted-airspace polygon is in range
   (the LAANC grid's 0-ft cells follow approach corridors, not the drawn
   bubbles).
+- 🧲 **SPACE WEATHER** — a planetary Kp storm (Kp ≥ 5) grounds the chart's NOW
+  column because a geomagnetic storm degrades the GPS/compass a drone relies on.
+  Pinned and always **red** — whenever it shows, it *is* a grounding condition —
+  and it reads the same `kpNow` the chart's KP gate uses, so card and chart agree.
 - 🚨 emergency squawks (7700/7600/7500) · ⚠️ NWS **warnings** (not watches) ·
   ⛔/⚠️ FAA restrictions (defense, prohibited, security, MOA, stadium…) ·
   🏞️ NPS land · 🗼 controlled airspace (Class B/C/D/E) · ✈️ / 🪖 civil and
@@ -87,9 +91,9 @@ context cards):
   zone drawn on the map. (Controlled-airspace tints are context — authorization
   required — and don't drive the title; the real ceiling severity stays on the
   FAA card above.)
-- Context cards at the bottom: 🌪️/⛈️ SPC Day-1 outlooks, 🧲 geomagnetic
-  storms (Kp ≥ 5), ☀️ M/X solar flares, and the 🌡️ local forecast (always
-  present).
+- Context cards at the bottom: 🌪️/⛈️ SPC Day-1 outlooks, ☀️ M/X solar flares
+  (an HF-blackout risk, but not a chart grounding gate), and the 🌡️ local
+  forecast (always present).
 
 Tap any card to fly the map there (airspace/TFR zones recentre on the polygon
 centre; other polygons fly to their nearest edge — the same edge distance used

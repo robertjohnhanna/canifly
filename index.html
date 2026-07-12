@@ -1281,22 +1281,12 @@ async function headOfState(countryName){
 
 /* =====================================================================
    6. SPACE WEATHER + WEATHER FORECAST (SITREP cards)
-   NOAA SWPC (planetary Kp, GOES X-ray flare class) + Open-Meteo forecast —
-   keyless, CORS *. Surfaced as SITREP cards, not map layers.
+   NOAA SWPC (GOES X-ray flare class) + Open-Meteo forecast — keyless, CORS *.
+   Surfaced as SITREP cards, not map layers. Planetary Kp is NOT fetched here:
+   the pinned SPACE WEATHER card reads the chart's own kpNow (getKp forecast),
+   so the card and the chart's KP grounding gate always agree.
    ===================================================================== */
-let KP=null, XRAY=null; // latest planetary Kp + GOES X-ray flare class
-async function loadKp(){
-  try{
-    const j=await getJSON('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
-    let kp=null;
-    for(let i=j.length-1;i>=0;i--){
-      const r=j[i]; const v=Array.isArray(r)?r[1]:r.Kp;
-      const n=parseFloat(v); if(isFinite(n)){kp=n;break;}
-    }
-    KP=kp;
-  }catch(e){ KP=null; }
-  scheduleSitrep();
-}
+let XRAY=null; // latest GOES X-ray flare class
 async function loadXray(){
   try{
     const j=await getJSON('https://services.swpc.noaa.gov/json/goes/primary/xray-flares-latest.json');
@@ -1669,6 +1659,18 @@ function sitrepTick(){
       rangeTxt,openBtn(faaMapUrl(lat,lon)),true]);
   }
 
+  // -- SPACE WEATHER (pinned): a planetary Kp storm at/above the chart's kpMax
+  //    grounds the NOW column — a geomagnetic storm degrades the GPS/compass a
+  //    drone depends on. Always RED, because whenever it shows it IS a grounding
+  //    condition. Reads the SAME kpNow the chart's KP gate uses, so card and
+  //    chart can't disagree. (Unknown Kp → no card; the NOW header + title
+  //    already amber "unverified".) --
+  const kpNow=FLY.detail?FLY.detail.kpNow:null;
+  if(kpNow!=null && kpNow>=SPEC.kpMax){
+    cards.push(['danger','🧲','SPACE WEATHER','Kp '+Math.round(kpNow)+' · geomagnetic storm',
+      'GPS / compass unreliable',openBtn(SWPC),true]);
+  }
+
   // -- GENERAL context cards (area-wide, not a single map point). Collected here
   //    but appended at the BOTTOM of the pile (after the distance-sorted items) —
   //    they're background context, not the nearest thing to the crosshair. --
@@ -1687,9 +1689,10 @@ function sitrepTick(){
     if(catHit) general.push([catHit.properties.rank>=4?'danger':'alert','⛈️','SEVERE WX OUTLOOK',cut(catHit.properties.label,16)+' today',
       'tornado / hail / wind risk',openBtn(SPCU),true]);
   }
-  // space weather (global scalars): geomagnetic storm + solar flare
-  if(KP!=null&&KP>=5) general.push(['alert','🧲','GEOMAGNETIC STORM','Kp '+KP+' · K-index',
-    'HF / GPS / grid impact',openBtn(SWPC),true]);
+  // solar flare (global scalar): an M/X GOES X-ray flare risks an HF radio
+  // blackout. Not a chart grounding gate (no flare gate), so it stays a context
+  // card. The geomagnetic Kp storm is handled as the pinned red SPACE WEATHER
+  // card above (it DOES ground the chart).
   if(XRAY&&/^[MX]/.test(XRAY)) general.push([/^X/.test(XRAY)?'danger':'alert','☀️','SOLAR FLARE '+XRAY,'GOES X-ray · '+(/^X/.test(XRAY)?'major':'moderate'),
     'HF radio blackout risk',openBtn(SWPC),true]);
 
@@ -2224,6 +2227,9 @@ function flyComputeDetail(){
     // 400 = no limit. aspUnknown = the FAA query failed (fail-open). Read by the
     // SITREP so a controlled-airspace card you're OVERHEAD reflects the real cap.
     aspCapFt, aspUnknown:asp==null,
+    // kpNow: the planetary Kp in force for the NOW column (null = unknown). The
+    // SITREP reads this for its SPACE WEATHER card, so card + chart KP gate agree.
+    kpNow:kpAt(0),
     grid:grid.map(g=>({n:g.n,maxFly:g.maxFly,grounded:g.grounded,reason:g.reason,reasonAlt:g.reasonAlt}))};
 }
 
@@ -2523,7 +2529,6 @@ gl.on('load',()=>{
   setTimeout(ensureStaticRegion,3500);   // fallback: load the region even if location never resolves
   refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // 30s refresh + clock
   updateLoadRing(); setInterval(updateLoadRing,200);   // bottom-left data-loading ring
-  loadKp();   setInterval(loadKp,180000);   // space weather: planetary Kp (SITREP card)
   loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare (SITREP card)
   loadWeather(true);   // weather forecast: the always-present bottom SITREP card
   setMapPadding();
