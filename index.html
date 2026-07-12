@@ -203,15 +203,17 @@
   #ctrl-wrap{position:absolute;z-index:16;left:calc(16px + var(--sa-l));
     right:calc(376px + var(--sa-r));bottom:16px;display:flex;justify-content:center;
     pointer-events:none}
+  /* --sev is the SITREP verdict colour (green/amber/red); sitrepTick sets it on
+     this box so the border AND the RANGE / miles text all track the verdict. */
   #ctrlbar{pointer-events:auto;height:42px;display:flex;align-items:center;gap:7px;padding:0 9px;
-    background:var(--panel);border:1px solid #fff;border-radius:9px;
+    background:var(--panel);border:1px solid var(--sev,#fff);border-radius:9px;
     color:#fff;font-family:var(--mono);font-size:13px;font-weight:700;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
   /* the label and value each fill (and centre within) their segment — RANGE
      centred between the − and the ⌖ button, the miles centred between ⌖ and + */
-  #ctrlbar .cb-label{flex:1 1 0;min-width:64px;text-align:center;letter-spacing:1px;font-weight:800}
+  #ctrlbar .cb-label{flex:1 1 0;min-width:64px;text-align:center;letter-spacing:1px;font-weight:800;color:var(--sev,#fff)}
   #ctrlbar .cb-val{flex:1 1 0;min-width:64px;text-align:center;font-variant-numeric:tabular-nums;
-    white-space:nowrap;cursor:pointer;-webkit-user-select:none;user-select:none}
+    white-space:nowrap;cursor:pointer;-webkit-user-select:none;user-select:none;color:var(--sev,#fff)}
   #ctrlbar .cb-val:active{opacity:.55}
   /* center-on-me icon button, now living inside the bar (white; inverts to a
      white fill with dark glyph on press, like the original box did) */
@@ -219,13 +221,16 @@
     background:none;color:#fff;cursor:pointer;flex:0 0 auto;
     display:flex;align-items:center;justify-content:center}
   #loc-btn:active{background:#fff;color:#00140a}
-  /* range ± — DRAWN glyphs (centred bars), white to match the box */
+  /* range ± — DRAWN glyphs (centred bars) inside a WHITE circle: the + glyph is
+     green, the − glyph is red; the button border stays white. */
   #ctrlbar .cb-btn{width:26px;height:26px;border-radius:50%;border:1px solid #fff;
     background:none;cursor:pointer;padding:0;flex:0 0 auto;position:relative}
   #ctrlbar .cb-btn::before,#ctrlbar .cb-btn.cb-plus::after{content:"";position:absolute;
-    top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:1px}
+    top:50%;left:50%;transform:translate(-50%,-50%);border-radius:1px}
   #ctrlbar .cb-btn::before{width:11px;height:2px}
   #ctrlbar .cb-btn.cb-plus::after{width:2px;height:11px}
+  #ctrlbar .cb-btn:not(.cb-plus)::before{background:var(--danger)}   /* − glyph = red */
+  #ctrlbar .cb-plus::before,#ctrlbar .cb-plus::after{background:var(--ok)}   /* + glyph = green */
   #ctrlbar .cb-btn:active{background:#fff}
   #ctrlbar .cb-btn:active::before,#ctrlbar .cb-btn:active::after{background:#00140a}
   /* data-loading ring: TOP-LEFT corner of the map, fades in + spins while any
@@ -1867,12 +1872,13 @@ function sitrepTick(){
   const t=$('#sit-title'); t.classList.remove('warn','alert');
   if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
   t.classList.toggle('acflash',acFlash);   // breaching aircraft → flash the title red/white
-  // the map range ring AND the range control's outline both track the SITREP
-  // title severity: green clear / amber reduced-or-unverified / red grounded
-  // (same 0·1·2 the title colour uses)
+  // the map range ring AND the range control (its outline + the RANGE / miles
+  // text) both track the SITREP title severity: green clear / amber reduced-or-
+  // unverified / red grounded (same 0·1·2 the title colour uses). The control
+  // reads --sev in CSS, so one property drives its border and both labels.
   const sevCol=SEV_COL[titleSev]||SEV_COL[0];
   if(gl.getLayer('ly-ring')) gl.setPaintProperty('ly-ring','line-color',sevCol);
-  const cbar=$('#ctrlbar'); if(cbar) cbar.style.borderColor=sevCol;
+  const cbar=$('#ctrlbar'); if(cbar) cbar.style.setProperty('--sev',sevCol);
   cards.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
 
   // the weather card is always appended, so there's always at least one row
