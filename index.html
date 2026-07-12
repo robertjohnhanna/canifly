@@ -1574,10 +1574,11 @@ function sitrepTick(){
   // Fully synchronous: reads only already-loaded layer/chart state.
   const c=gl.getCenter();
   const lat=c.lat, lon=c.lng, rangeKm=RNG.mi*MI_TO_KM;
-  // The LOW-AIRCRAFT warning reaches further than the range ring: manned traffic
-  // below 1,000 ft AGL is worth flagging early, so it's scanned out to the shared
-  // 3× radius (ringViewMi — same factor as the zoom cap; the grey dotted ring
-  // marks it). Everything else in the SITREP stays inside the range ring.
+  // Aircraft are TRACKED further out than everything else in the SITREP — to the
+  // shared 3× radius (ringViewMi — same factor as the zoom cap; the grey dotted
+  // ring marks it) — so you see traffic approaching. They're ordinary distance-
+  // sorted cards out there; the red LOW AIRCRAFT alert is scanned only in the
+  // range ring (below). Everything else in the SITREP stays inside the range ring.
   const warnKm=ringViewMi()*MI_TO_KM;
   SOS_HEX=new Set(featsIn('sos').map(f=>f.properties.hex).filter(Boolean));
   const rows=[];
@@ -1603,8 +1604,9 @@ function sitrepTick(){
   const cards=[];   // [cls, icon, l1, l2, l3, action, hazard]
 
   // -- LOW AIRCRAFT BREACH: a plane (civil / military / emergency) inside the
-  //    WARNING net (warnKm = 3× the range ring, marked by the grey dotted ring)
-  //    AND under the WARN_AGL_FT (400 ft ceiling + FAA_SEP_FT) warning altitude. Rather
+  //    RANGE RING AND under the WARN_AGL_FT (400 ft ceiling + FAA_SEP_FT) warning
+  //    altitude (aircraft further out, to the grey ring, are tracked as ordinary
+  //    cards but don't trigger the alert until they're in range). Rather
   //    than a separate pinned card, the plane's OWN card (below) transforms into
   //    the red flashing LOW AIRCRAFT alert while it breaches, and reverts to the
   //    normal plane card when it climbs out / leaves — always exactly ONE card
@@ -1615,25 +1617,21 @@ function sitrepTick(){
   //    breachInfo maps a plane's hex/callsign → its AGL label; the item loop
   //    reads it. Ground aircraft (alt='ground'/'?') skip. --
   const acGround=groundElevFt(lat,lon);          // ft AMSL at crosshair, null until fetched
-  const near=planesNear(lat,lon,warnKm);         // low-traffic net = 3× the ring
+  // The LOW AIRCRAFT alert is scanned in the RANGE RING only — aircraft further out
+  // (to the grey 3× ring) are still tracked as ordinary cards below, but a low one
+  // only becomes the red flashing alert once it's in range.
+  const near=planesNear(lat,lon,rangeKm);
   // pull terrain under the crosshair + every plausibly-low plane in one batch
   ensureGroundElev([[lat,lon],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
   const breachers=near
     .map(a=>{ const {ground,agl}=planeAglFt(a,acGround); return {...a,ground,agl}; })
     .filter(a=>a.agl<WARN_AGL_FT);
-  // Split by RING: a low plane INSIDE the range ring is the full RED alert (flashing
-  // card, pulsing map halo, chart TRFC cap — the existing behaviour); one only in
-  // the grey 3× ring is an AMBER heads-up (amber card, distance-sorted — no flash,
-  // no map halo, no chart effect). breachInfo carries the per-plane AGL label +
-  // which ring it's in; the item loop reads it.
-  const breachInfo=new Map();   // acKey → {agl:'254 ft AGL', inRange:bool}
-  breachers.forEach(a=>breachInfo.set(acKey(a.f.properties),{
-    agl: Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL'),
-    inRange: a.km<=rangeKm }));
-  const redBreach=breachers.filter(a=>a.km<=rangeKm);   // inside the range ring
-  const acFlash=redBreach.length>0;   // the title flashes red only for IN-RANGE low traffic
-  // pulsing map halo(s) ONLY at the in-range breachers (empty = cleared)
-  setAcAlert(redBreach.map(a=>({type:'Feature',
+  const breachInfo=new Map();   // acKey → AGL label ('254 ft AGL' / '254 ft' if ground unknown)
+  breachers.forEach(a=>breachInfo.set(acKey(a.f.properties),
+    Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL')));
+  const acFlash=breachers.length>0;
+  // pulsing map halo(s) at the breaching aircraft (empty = cleared)
+  setAcAlert(breachers.map(a=>({type:'Feature',
     geometry:{type:'Point',coordinates:a.pt},properties:{}})));
 
   // -- FAA CEILING (pinned): surfaces the chart's OWN airspace gate directly.
@@ -1733,42 +1731,35 @@ function sitrepTick(){
   const items=[];
   CATS.forEach(cfg=>catItems(cfg,lat,lon,cfg.air?warnKm:rangeKm).forEach(f=>{
     const g=f.geometry; if(!g) return;
-    // Aircraft are collected out to the 3× warning net, but a plane BEYOND the
-    // range ring only earns a card if it's a LOW-AIRCRAFT breach — otherwise the
-    // panel would fill with distant cruising traffic. Inside the ring, every plane
-    // still gets its normal card.
-    if(cfg.air && !breachInfo.has(acKey(f.properties))
-       && havKm(lat,lon,g.coordinates[1],g.coordinates[0])>rangeKm) return;
+    // Aircraft are tracked out to the grey 3× ring — every one in that net gets a
+    // normal distance-sorted card. A low one only escalates to the red LOW AIRCRAFT
+    // alert once it's IN RANGE (in breachInfo, which is scanned at the range ring).
     // pt = the CLOSEST EDGE point to the crosshair (label + sorting distance);
     // for an airspace/TFR zone the tap instead recentres on the polygon CENTRE
     // (flyPt below). Inside still sorts to the top / reads "overhead".
     const inside=g.type!=='Point'&&pointInFeature(f,lon,lat);
     let cls=cfg.cls?cfg.cls(f):'', det=null, headOv=null, subOv=null, icOv=null, flash=false, hazardOv=null;
-    // BREACHING aircraft: this plane's own card BECOMES a LOW AIRCRAFT alert while
-    // it's low; it reverts automatically once it's no longer in breachInfo. One
-    // card per plane, never two. INSIDE the range ring → red + flashing (with the
-    // map halo + chart cap set above); only in the grey 3× ring → amber, no flash.
+    // BREACHING aircraft (low + IN RANGE): this plane's own card BECOMES the red
+    // flashing LOW AIRCRAFT alert while it's in breachInfo, and reverts to its
+    // normal card the moment it climbs out / leaves the range ring. One card per
+    // plane, never two.
     if(cfg.air && breachInfo.has(acKey(f.properties))){
-      const b=breachInfo.get(acKey(f.properties));
-      hazardOv=true; icOv=acIcon(f);   // ✈️/🚁, same as every card
-      if(b.inRange){ cls='danger'; flash=true; } else { cls='alert'; flash=false; }
-      // l2 is the callsign / TAIL NUMBER (the headline is now LOW AIRCRAFT); tint it
-      // to the map icon colour like the regular cards do (the headline itself is
-      // coloured by cls — flashing red in-range, amber in the grey ring). The ground
-      // speed rides l3 after the AGL, the same as every plane card.
+      cls='danger'; flash=true; hazardOv=true; icOv=acIcon(f);   // ✈️/🚁, same as every card
+      // l2 is the callsign / TAIL NUMBER (the headline is now the flashing LOW
+      // AIRCRAFT alert); tint it to the map icon colour like the regular cards do.
+      // The ground speed rides l3 after the AGL, the same as every plane card.
       headOv='LOW AIRCRAFT';
       subOv='<span style="color:'+AC_COL[cfg.src]+'">'+acTail(f,12,'aircraft')+'</span>';
-      det=b.agl;
+      det=breachInfo.get(acKey(f.properties));
     }
     // Controlled-airspace cards (Class B/C/D/E) are hazard:false, so their
     // polygon colour (applied at render) tints the card without driving the title
     // or the hazard tier: the LAANC-ceiling severity is carried by the dedicated
     // FAA CEILING card above (same getAirspace result the chart uses), so the two
-    // can't disagree. Tier by EFFECTIVE hazard (a breach override counts): red
-    // flash → 0, an amber low-aircraft heads-up → 1 with the other amber hazards,
-    // everything else keeps its hazard/neutral tier — distance sorts within each.
-    const haz=hazardOv!=null?hazardOv:cfg.hazard;
-    const tier=flash?0:(haz?(cls==='danger'?0:1):2);
+    // can't disagree. cls drives tier so a breaching plane sorts up with the
+    // hazards; everything else (incl. all tracked grey-ring traffic) keeps its
+    // hazard/neutral tier — distance sorts within each.
+    const tier=flash?0:(cfg.hazard?(cls==='danger'?0:1):2);
     let pt, km;
     if(g.type==='Point'){ pt=g.coordinates; km=havKm(lat,lon,pt[1],pt[0]); }
     else {
@@ -1798,13 +1789,12 @@ function sitrepTick(){
     const sub=subOv!=null?subOv:((cfg.sub?cfg.sub(f):'')||'—');
     // Headline (.s1) colour. Airspace cards take their MAP POLYGON colour so the
     // card matches what's drawn (blue B/D, magenta C/E, red defense/prohibited,
-    // orange restricted, gold advisory). A REGULAR aircraft card (no headline
-    // override) tints its tail number to the same colour as its plane/heli map
-    // icon — green civil, yellow military, red emergency. A LOW AIRCRAFT card
-    // (headOv set) keeps its cls headline colour — flashing red in-range, amber in
-    // the grey ring — with the tail number tinted on l2 instead. Only a bare hex
-    // passes, so a feed can't inject into the style attribute.
-    const rawCol=flash?null:cfg.src==='airspace'?f.properties._col:(cfg.air&&headOv==null)?AC_COL[cfg.src]:null;
+    // orange restricted, gold advisory). A REGULAR aircraft card tints its tail
+    // number (the headline) to the same colour as its plane/heli map icon — green
+    // civil, yellow military, red emergency. A breaching-aircraft override keeps
+    // the flashing red headline (its tail number is tinted on l2 instead). Only a
+    // bare hex passes, so a feed can't inject into the style attribute.
+    const rawCol=flash?null:cfg.src==='airspace'?f.properties._col:cfg.air?AC_COL[cfg.src]:null;
     const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
     // Every plane card (civil / military / emergency / low-aircraft) carries its
     // ADS-B ground speed on line 3, AFTER the altitude — spd is knots, shown MPH,
@@ -2165,9 +2155,9 @@ async function sampleRadarPrecip(lat,lon,rngMi){
 // the highest 50-ft step STRICTLY BELOW (A − FAA_SEP_FT) — the TRFC cell then
 // marks that floor (red at/above it, green below). The most restrictive plane
 // wins. Infinity = no intruding traffic; a value < 0 grounds the column. Scans
-// only the RANGE RING (not the grey 3× net): a low plane still approaching in the
-// grey ring is an amber SITREP heads-up but doesn't cap the chart until it's in
-// range — matching the RED breach set that drives the halo + title flash.
+// only the RANGE RING (not the grey 3× net): grey-ring aircraft are tracked as
+// ordinary SITREP cards but don't cap the chart until they're in range — matching
+// the LOW AIRCRAFT breach set that drives the halo + title flash.
 function flyTrafficCeilFt(){
   const c=gl.getCenter();
   const cross=groundElevFt(c.lat,c.lng);   // ft AMSL at crosshair, fallback ground
