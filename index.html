@@ -588,12 +588,15 @@ defLayer({
       getJSON(q('Special_Use_Airspace','NAME,TYPE_CODE,UPPER_VAL,LOWER_VAL'),{timeout:10000}).catch(()=>null),
       getJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:9000}).catch(()=>null),
       getJSON(q('Stadiums','NAME'),{timeout:9000}).catch(()=>null)]);
-    // If the primary controlled-airspace feed FAILED (null) — or every feed did — THROW so
-    // the runtime keeps the last-good overlay and RETRIES (a locked map has no other refetch
-    // trigger, so silently returning empty would leave you with no airspace until you move).
-    // A successful-but-empty query (genuinely no airspace in range) returns {features:[]},
-    // not null, so it never trips this. Individual minor-feed blips still fail soft.
-    if(cls==null || [cls,def,sua,nsufr,stad].every(r=>r==null)) throw new Error('airspace feeds unreachable');
+    // A feed "failed" if the fetch threw (null) OR it came back as an FAA error-in-200 /
+    // malformed body — these ArcGIS services routinely answer HTTP 200 with {error:{…}} or a
+    // non-array features under load, which is NOT "no airspace here". Treat that as a failure
+    // so the runtime keeps the last-good overlay and RETRIES, instead of rendering an empty
+    // map and clearing the DATA warning. If the PRIMARY (Class_Airspace) feed is bad — or
+    // every feed is — throw. A genuine empty area returns a clean {features:[]}, so it renders
+    // (nothing to show) without tripping this; minor-feed blips still fail soft.
+    const bad=r=>r==null||r.error||!Array.isArray(r.features);
+    if(bad(cls) || [cls,def,sua,nsufr,stad].every(bad)) throw new Error('airspace feeds unreachable');
     const feats=[];
     const push=(geom,props)=>{ if(geom) feats.push({type:'Feature',geometry:geom,properties:props}); };
     // controlled airspace around airports (advisory, aeronautical blue/magenta)
