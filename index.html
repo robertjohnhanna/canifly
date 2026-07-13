@@ -81,8 +81,13 @@
   .panel{position:absolute;z-index:15;background:var(--panel);
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     display:flex;flex-direction:column;overflow:hidden}
+  /* Only the LEFT edge carries a border — it's the panel↔map divider. The other
+     three sides sit at the screen edge, where a boxed border's corner would be
+     clipped by the device's rounded screen corner (bottom-right) and look broken;
+     the background simply meets the screen edge instead, which the rounded corner
+     masks cleanly. */
   #sitrep{top:0;right:0;left:auto;width:360px;bottom:0;
-    border:1px solid var(--line)}
+    border-left:1px solid var(--line)}
   /* ---------- canifly — the static drone-preflight chart ----------
      The flyability grid, and nothing else — no title/coords/refresh line.
      The pane is sized to its CONTENT (the chart never changes size) and is the
@@ -1844,10 +1849,12 @@ function sitrepTick(){
 
   // -- ON-SCREEN CONTEXT: every map object VISIBLE on the map but OUTSIDE its ring
   //    (aircraft beyond the 5 mi grey ring, other zones beyond the 1 mi red ring)
-  //    becomes a NEUTRAL, distance-sorted card appended BELOW the weather card — a
-  //    full read-out of what's on screen, not just what's in range. No hazard tier
-  //    and no flash: these are context, not in-range threats, so they never colour
-  //    the title. Kept recognisable by the same icon + polygon/aircraft colour. --
+  //    becomes a NEUTRAL, distance-sorted card. Collected in its OWN list and rendered
+  //    AFTER everything else (see below), so it's ALWAYS the bottom of the pile — it
+  //    never rides up when the weather card is promoted to a top hazard, and the flash
+  //    reordering can't touch it. No hazard tier, no flash: context, not in-range
+  //    threats, so it never colours the title. Recognisable by icon + polygon/aircraft colour. --
+  const ctxCards=[];
   const bounds=gl.getBounds();
   const inView=pt=>{ try{ return !!pt&&bounds.contains(pt); }catch(e){ return false; } };
   const ctx=[];
@@ -1881,7 +1888,7 @@ function sitrepTick(){
        if(cfg.air){ const s=Number(f.properties.spd); if(isFinite(s)) l3+=' · '+Math.round(toMph(s))+U(' mph'); }
        const rawCol=cfg.src==='airspace'?f.properties._col:cfg.air?AC_COL[cfg.src]:null;
        const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
-       cards.push(['', ic, head, sub, l3, '', false, undefined, col]);   // neutral, no hazard/flash
+       ctxCards.push(['', ic, head, sub, l3, '', false, undefined, col]);   // neutral, no hazard/flash
      });
 
   // title severity: 0 none · 1 alert (amber) · 2 warn (red). Driven by the
@@ -1916,7 +1923,9 @@ function sitrepTick(){
   // set ONLY for an in-range low aircraft; filter is stable so multiple breaches keep
   // their distance order.
   const ordered=[...cards.filter(cd=>cd[7]), ...cards.filter(cd=>!cd[7])];
-  ordered.forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
+  // In-range/pinned cards first (flash breach at the very top), then the on-screen
+  // context cards ALWAYS last — a promoted weather card can rise, but context stays put.
+  [...ordered, ...ctxCards].forEach(cd=>row(cd[0],cd[1],cd[2],cd[3],cd[4],cd[5],cd[7],cd[8]));
 
   // the weather card is always appended, so there's always at least one row
   $('#sit-body').innerHTML=rows.join('');
