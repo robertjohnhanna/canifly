@@ -1451,8 +1451,10 @@ function sitrepTick(){
       hazardOv!=null?hazardOv:cfg.hazard, flash?true:undefined, col));
   });
   general.forEach(c=>cards.push(c));   // area-wide context cards sink to the bottom
-  spcCards.forEach(c=>cards.push(c));  // SPC outlook (info) sits just above weather
-  if(!wxc.pin) cards.push(wxc.card);   // routine conditions card (a gate/outage pins it up top)
+  spcCards.forEach(c=>{ c.wx=true; cards.push(c); });  // SPC outlook = weather → weather tier
+  // routine conditions card = GENERAL WEATHER → the very last card in the ranked stack
+  // (a binding weather gate/outage pins it up top instead — the "unless promoted" case)
+  if(!wxc.pin){ wxc.card.wxGen=true; cards.push(wxc.card); }
 
   // -- ON-SCREEN CONTEXT: map objects OUTSIDE their ring become neutral, distance-sorted
   //    cards in their OWN list, rendered last so they're always the bottom of the pile
@@ -1522,9 +1524,15 @@ function sitrepTick(){
   // card priority: a red flashing in-range LOW AIRCRAFT breach tops the pile, then red
   // groundings, then the amber LOW AIRCRAFT heads-up, then everything else in built order.
   // Stable rank sort (index tie-break) keeps distance order within each rank.
+  // weather sinks to the BOTTOM of the stack unless PROMOTED: a binding weather gate is a
+  // pinned hazard (rank 0/1) and rises with its severity; every routine/outlook weather card
+  // (tagged .wx) sits below the operational item cards, and GENERAL WEATHER (.wxGen — the
+  // routine conditions card) is dead last, just above the neutral on-screen context.
   const rank=c=>c.flash?0                                  // red flashing low-aircraft breach
-    :(c.hazard&&c.cls==='danger')?1                        // red grounding hazard
+    :(c.hazard&&c.cls==='danger')?1                        // red grounding hazard (incl. promoted wx)
     :(c.l1==='LOW AIRCRAFT'&&c.cls==='alert')?2            // amber low-aircraft heads-up
+    :c.wxGen?5                                             // GENERAL WEATHER → absolute bottom
+    :c.wx?4                                                // other weather (outlook) → below items
     :3;                                                    // everything else
   const ordered=cards.map((c,i)=>({c,i})).sort((a,z)=>rank(a.c)-rank(z.c)||a.i-z.i).map(x=>x.c);
   // context cards ALWAYS render last (a promoted card can rise, but context stays bottom)
