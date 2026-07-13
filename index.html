@@ -362,7 +362,11 @@ function adsbRadiusNm(){
   return Math.min(ADSB_MAX_NM,Math.max(15,Math.ceil(diagKm/2*KM_TO_NM*1.15)));
 }
 async function adsbViewport(){
-  const c=gl.getCenter();
+  // Centre the query on the VIEW's geometric centre (not the padding-offset map centre),
+  // with the half-diagonal radius above, so the circle covers the whole visible view
+  // symmetrically — the same centring the precip view-sample uses. The SITREP still
+  // measures each contact's distance from YOU; this just fetches the on-screen superset.
+  const c=gl.getBounds().getCenter();
   const j=await adsb('/point/'+c.lat.toFixed(3)+'/'+c.lng.toFixed(3)+'/'+adsbRadiusNm());
   return {ac:j.ac||[]};
 }
@@ -1178,16 +1182,16 @@ function wxCard(wxState, wn){
     const wxCap=Math.min(wn.windCeilFt,wn.cloudCapFt);   // weather-only ceiling (ft)
     if(wn.gust||wn.vis||wn.precip||wxCap<0){
       let ic,head,sub;
-      if(wn.precip){ ic='⛈️'; head='PRECIPITATION'; sub='radar echo in range'; }
+      if(wn.precip){ ic='⛈️'; head='PRECIPITATION'; sub='radar echo within '+GREY_MI+U(' mi'); }
       else if(wn.gust){ ic='💨'; head='HIGH WIND'; sub='gust '+Math.round(wn.gustMph)+U(' mph')+' · max '+LIM.wind; }
       else if(wn.windCeilFt<0){ ic='💨'; head='HIGH WIND'; sub=Math.round(wn.windPeakMph)+U(' mph')+' aloft · max '+LIM.wind; }
       else if(wn.vis){ ic='🌫️'; head='LOW VISIBILITY'; sub=(wn.visSM!=null?wn.visSM.toFixed(1):'—')+U(' SM')+' · min 3'+U(' SM'); }
       else { ic='☁️'; head='LOW CLOUD'; sub='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr'; }
       return {pin:true, card:['danger',ic,head,sub,condLine(),'',true]};
     }
-    // PRECIP NEARBY: an echo anywhere on the visible map but not yet grounding in the
-    // red ring — a storm in view. Promote the card to amber ("land now") above a mere
-    // reduced ceiling; red precip overhead (above) already outranks it.
+    // PRECIP NEARBY: an echo anywhere on the visible map but not yet in the 5 mi
+    // grounding ring — a storm in view. Promote the card to amber ("land now") above a
+    // mere reduced ceiling; red precip in range (above) already outranks it.
     if(wn.precipInbound){
       return {pin:true, card:['alert','🌧️','PRECIP NEARBY','radar echo on screen',condLine(),'',true]};
     }
@@ -2193,8 +2197,8 @@ function persistAsp(){ store(ASP_CACHE_KEY,JSON.stringify(aspCache)); }
 
 // ---- PCPN: is there NEXRAD reflectivity within `rngMi` of the point? Samples the
 // SAME Iowa Mesonet mosaic the map's radar layer draws, at its native z8, on an
-// offscreen canvas. Called twice per refresh — at the RED ring (1 mi, grounds NOW)
-// and the GREY ring (5 mi, the "precip inbound" amber heads-up). Returns true/false,
+// offscreen canvas. Called twice per refresh — at the GREY ring (5 mi, grounds NOW)
+// and across the whole visible view (the "precip nearby" amber heads-up). Returns true/false,
 // or null when the tiles can't be read (load/CORS failure) — unknown fails OPEN (no
 // gate) and ambers the NOW header + the SITREP title via FLY.err. ----
 const RADAR_Z=8, RADAR_ALPHA=80, RADAR_MIN_PX=2;
@@ -2272,8 +2276,8 @@ function flyTrafficCeilFt(){
 const FLY={
   data:null,     // last good {lat,lon,aloft,kp,asp} — lat/lon = where it was fetched
   detail:null,   // computed render model (kept for tests/debug)
-  precip:null,   // radar echo within the RED ring (1 mi)? true/false/null → grounds NOW
-  precipInbound:null,   // radar echo anywhere on the visible map but NOT the red ring → amber "nearby"
+  precip:null,   // radar echo within the GREY ring (5 mi)? true/false/null → grounds NOW
+  precipInbound:null,   // radar echo anywhere on the visible map but NOT the 5 mi ring → amber "nearby"
   err:{om:false,kp:false,asp:false,radar:false},
 };
 // Gate inputs currently UNKNOWN (fetch failed / stale beyond fallback). Every
@@ -2530,14 +2534,14 @@ async function flyRefresh(){
     const pAloft = aloftKeep?Promise.resolve(FLY.data.aloft):retry(()=>getAloft(base.lat,base.lon),2).catch(()=>null);
     const pKp    = kpKeep?Promise.resolve(FLY.data.kp):retry(()=>getKp(),2).catch(()=>null);
     const pAsp   = fresh?Promise.resolve({ceilFt:cc.ceilFt}):getAirspace(base.lat,base.lon,rngMi).catch(()=>null);
-    // Two radar samples: the RED ring (1 mi, centred on YOU) grounds NOW; the whole
+    // Two radar samples: the GREY ring (5 mi, centred on YOU) grounds NOW; the whole
     // VISIBLE MAP VIEW is the amber "precip on screen" heads-up (any echo you can see,
-    // not yet in the red ring). The view sample is centred on the view's geometric
+    // not yet in the grounding ring). The view sample is centred on the view's geometric
     // centre and reaches its furthest corner (half-diagonal), so the circle covers the
     // whole visible rectangle; floored at the grey ring so it's never smaller.
     const _b=gl.getBounds(), _bc=_b.getCenter();
     const scrMi=Math.max(GREY_MI, havKm(_bc.lat,_bc.lng,_b.getNorth(),_b.getEast())/MI_TO_KM);
-    const pPrecip= retry(()=>sampleRadarPrecip(base.lat,base.lon,RED_MI),2).catch(()=>null);
+    const pPrecip= retry(()=>sampleRadarPrecip(base.lat,base.lon,GREY_MI),2).catch(()=>null);
     const pPrecipScreen= retry(()=>sampleRadarPrecip(_bc.lat,_bc.lng,scrMi),2).catch(()=>null);
 
     const aloft=await pAloft;
