@@ -572,18 +572,28 @@ defLayer({
   lineWidth:1, lineOpacity:0.34,
   loader: async ()=>{
     const env=viewEnv();
+    // maxAllowableOffset generalises the geometry server-side (~440 m) — this is a faint
+    // visual overlay, so the exact vertices don't matter, and it roughly halves the payload
+    // over the 25 mi box (a dense Class-B metro drops from ~2.2 MB to ~1 MB) so the query
+    // lands well inside its timeout instead of failing on a slow connection.
     const q=(svc,fields,where)=>`https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/${svc}/FeatureServer/0/query`
       +`?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326`
-      +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&outFields=${fields}`
+      +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&maxAllowableOffset=0.004&outFields=${fields}`
       +(where?`&where=${encodeURIComponent(where)}`:'')+`&f=geojson`;
-    // five fail-soft feeds (a failure just omits its features). Class_Airspace is
-    // filtered server-side to B/C/D + surface-E2 so the huge Class-E5 never hits the wire.
+    // five feeds. Class_Airspace is filtered server-side to B/C/D + surface-E2 so the huge
+    // Class-E5 never hits the wire; it's the heavy one, so it gets the longest timeout.
     const [cls,def,sua,nsufr,stad]=await Promise.all([
-      getJSON(q('Class_Airspace','NAME,CLASS,LOCAL_TYPE',"CLASS IN ('B','C','D') OR LOCAL_TYPE='CLASS_E2'"),{timeout:12000}).catch(()=>null),
+      getJSON(q('Class_Airspace','NAME,CLASS,LOCAL_TYPE',"CLASS IN ('B','C','D') OR LOCAL_TYPE='CLASS_E2'"),{timeout:15000}).catch(()=>null),
       getJSON(q('National_Defense_Airspace_TFR_Areas','NAME'),{timeout:9000}).catch(()=>null),
       getJSON(q('Special_Use_Airspace','NAME,TYPE_CODE,UPPER_VAL,LOWER_VAL'),{timeout:10000}).catch(()=>null),
       getJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:9000}).catch(()=>null),
       getJSON(q('Stadiums','NAME'),{timeout:9000}).catch(()=>null)]);
+    // If the primary controlled-airspace feed FAILED (null) — or every feed did — THROW so
+    // the runtime keeps the last-good overlay and RETRIES (a locked map has no other refetch
+    // trigger, so silently returning empty would leave you with no airspace until you move).
+    // A successful-but-empty query (genuinely no airspace in range) returns {features:[]},
+    // not null, so it never trips this. Individual minor-feed blips still fail soft.
+    if(cls==null || [cls,def,sua,nsufr,stad].every(r=>r==null)) throw new Error('airspace feeds unreachable');
     const feats=[];
     const push=(geom,props)=>{ if(geom) feats.push({type:'Feature',geometry:geom,properties:props}); };
     // controlled airspace around airports (advisory, aeronautical blue/magenta)
