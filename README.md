@@ -71,8 +71,10 @@ when the panel is off-screen; they stay distinguishable by dash (inner dashed,
 outer dotted).
 - **VIEW · 10 mi** (2× grey) — the framing radius the map opens to on a location
   fix and resets to on the ⌖ button, and the **tightest allowed zoom**: the view
-  never shows less than a 10-mile radius. Pan north and the camera eases back out
-  to hold the cap.
+  never shows less than a 10-mile radius. The locked framing is a **fixed scale**
+  computed from latitude alone (not the window size), so it's identical on every
+  layout — phone portrait, phone landscape, tablet, desktop. Pan north and the
+  camera eases back out to hold the cap.
 
 ## The SITREP cards
 
@@ -202,35 +204,41 @@ gate input.
 | NWS warning polygons (US) — red outline for Extreme/Severe, amber otherwise | api.weather.gov | 15 s |
 | NEXRAD reflectivity mosaic | Iowa State Mesonet | 60 s (source updates ~5 min) |
 | SPC Day-1 outlook (hidden; feeds cards) | NOAA SPC | 15 min |
-| FAA airspace + restrictions (regional cache) — loads around YOU once the fix settles (skips the pre-fix default centre, same as the aircraft feed) | FAA ArcGIS ×5 services | on travel |
+| FAA airspace + restrictions (**national cache**) — the whole USA pulled **once at boot**, before any location fix, then drawn everywhere and never re-downloaded | FAA ArcGIS ×5 services | once at boot |
 | NPS lands (regional cache) | NPS ArcGIS | on travel |
 
 **One pulse, per-feed cadences.** The unified refresh pulse fires every **5 s** —
-that's how often live traffic updates and the countdown dial refills. Each feed
-then keeps its own natural cadence on top of it (NWS 15 s, winds-aloft 15 s, Kp
-~3 min, radar 60 s, SPC 15 min), so the fast pulse never hammers a source whose
-data doesn't change that fast. *Static* feeds (FAA airspace, NPS lands) barely
-change, and the full US is ~50 MB (times out) — so they're a **regional cache**:
-pulled once for a ~85-mile box around you, drawn at *every* zoom, and re-pulled
-only when you travel out of that region. That's why airspace stays painted when
-you zoom out, and it never touches the periodic pulse. Every loader retries with
-backoff, a failing feed backs off instead of being re-hammered each pulse, and a
-failure never wipes the map.
+that's how often live traffic updates. Each feed then keeps its own natural cadence
+on top of it (NWS 15 s, winds-aloft 15 s, Kp ~3 min, radar 60 s, SPC 15 min), so the
+fast pulse never hammers a source whose data doesn't change that fast.
+
+**FAA airspace is a national cache.** The drawn airspace set is bounded (controlled
+airspace B/C/D + surface-E2, national-defense TFRs, low special-use airspace, security
+UAS zones, stadiums), so — filtered server-side and **paged** — the whole USA comes back
+in one cache. It's pulled **once at boot, before the location fix** (alongside the
+military-aircraft, radar and NWS feeds), drawn at *every* zoom wherever you go, and
+**never re-downloaded** — it doesn't depend on where you are. A single FAA request can't
+return the country in one shot (the service caps each response and flags
+`exceededTransferLimit`), so the loader pages through each feed until the service stops
+flagging more. *NPS lands* stay a **regional cache** (every park boundary at full
+precision is far too large to pull nationwide): pulled once for a ~85-mile box around
+you and re-pulled only when you travel out of it. Every loader retries with backoff, a
+failing feed backs off instead of being re-hammered, and a failure never wipes the map.
 
 The map has **no click popups** — everything inside the range ring is described
 by the SITREP cards, so the map stays a clean picture and the panel carries the
 detail.
 
-**The panel has no header in any layout.** The CANIFLY verdict, the refresh dial and
-the lock control live on the **map's corners** instead — **top-left**, **top-right**,
-**bottom-right** — so the panel is just the flyability chart + the SITREP cards. The
-map-corner controls carry a **black outline** (a black glyph outline on the CANIFLY
-tag; a black disc + outline on the dial) so they read over any map. The CANIFLY tag
-mirrors the same green/amber/red verdict + breach-flash the panel drives, so the
-one-glance go/no-go is always on the map. On a **docked** layout (desktop / iPad
-landscape / iPhone landscape) the corner controls sit just inside the map, clearing
-the 360px panel — positioned off the panel edge, **not** the safe-area inset (the
-panel sits flush at the screen edge, so adding the inset would leave a gap).
+**The panel has no header in any layout.** The CANIFLY verdict and the lock control
+live on the **map's corners** instead — **top-left** and **bottom-right** — so the
+panel is just the flyability chart + the SITREP cards. The map-corner controls carry a
+**black outline** (a black glyph outline on the CANIFLY tag) so they read over any map.
+The CANIFLY tag mirrors the same green/amber/red verdict + breach-flash the panel
+drives, so the one-glance go/no-go is always on the map. Data **auto-refreshes every
+5 s** (no manual refresh control). On a **docked** layout (desktop / iPad landscape /
+iPhone landscape) the corner controls sit just inside the map, clearing the 360px
+panel — positioned off the panel edge, **not** the safe-area inset (the panel sits
+flush at the screen edge, so adding the inset would leave a gap).
 
 **Mobile portrait** (iPhone, and any ≤1000px-wide portrait screen) is a **two-page
 toggle**: the map and the panel are separate full-screen pages. **Tap the map** to
@@ -241,12 +249,9 @@ the whole screen (the panel uses the dynamic viewport height so it never spills 
 Safari's address bar). The map-corner controls move to the true screen edges there,
 since the panel is an overlay sheet rather than docked.
 
-A **refresh dial** — a circular sweep that fills over the 5 s cycle (a
-numberless countdown ring) — sits at the map's top-right corner; it **spins** while
-a feed is fetching (it replaces the old corner load spinner) and a tap forces an
-immediate refresh. Its fill **tracks the CANIFLY verdict colour** (green/amber/red),
-as does the **lock control's glyph** — so both map controls carry the same
-one-glance go/no-go as the rings and the CANIFLY tag.
+Data **auto-refreshes every 5 s** — there's no manual refresh control. The **lock
+control's glyph tracks the CANIFLY verdict colour** (green/amber/red), so it carries
+the same one-glance go/no-go as the rings and the CANIFLY tag.
 
 ## Location & privacy
 
@@ -290,7 +295,7 @@ anonymous lat/lon query parameters to the public weather APIs.
   chart's **TRFC** ceiling cell (all in sync — the TRFC cell + halo only appear for
   an in-range breach). A low aircraft out in the **5 mi grey ring** gets a steady
   **amber** LOW AIRCRAFT card instead; higher aircraft in the grey ring are ordinary
-  distance-sorted cards. Tapping the **refresh dial** forces an immediate refresh.
+  distance-sorted cards.
 - AGL is computed per plane: **QNH-corrected** barometric altitude (ADS-B
   reports pressure altitude off 29.92″; the local sea-level pressure from the
   weather feed corrects it, ~27 ft/hPa) minus the **ground elevation under that

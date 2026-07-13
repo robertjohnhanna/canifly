@@ -22,8 +22,8 @@
      (on iPhone portrait, a full-screen page toggled with the map). The
      panel has NO header: the flyability chart is its top section, then a
      distance-sorted SITREP briefing of everything in the range ring — all
-     driven by the map-centre crosshair. The CANIFLY verdict tag, refresh
-     dial and lock control live on the map's corners.
+     driven by the map-centre crosshair. The CANIFLY verdict tag and lock
+     control live on the map's corners; data auto-refreshes every 5 s.
 
      Map layers (all keyless, CORS-*): live aircraft (adsb), NWS
      warnings, NEXRAD radar (Iowa State Mesonet), FAA airspace (Class
@@ -88,30 +88,6 @@
     display:flex;flex-direction:column;overflow:hidden}
   #sitrep{top:0;right:0;left:auto;width:360px;bottom:0;
     border:1px solid var(--line)}
-  /* REFRESH DIAL — a circular sweep that FILLS over the refresh cycle (a number-
-     less countdown); tap = refresh now. While a feed is fetching it spins (a
-     rotating arc), folding in the old load spinner. ONE instance (#map-refresh),
-     at the map's top-right in every layout. */
-  .rdial{position:relative;border:none;background:none;
-    padding:0;cursor:pointer;-webkit-user-select:none;user-select:none}
-  /* the countdown fill tracks the CANIFLY verdict (--sev, set by sitrepTick): green
-     clear / amber reduced-or-unverified / red grounded — falling back to accent green
-     before the first tick. A THICK arc (9px) on a compact dial with a small dark
-     centre, so the colour wheel is the dominant feature. */
-  .rdial .rdial-prog{position:absolute;inset:0;border-radius:50%;
-    background:conic-gradient(var(--sev,var(--accent)) var(--rp,0deg), #2a3a4d 0deg);
-    -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 9px),#000 calc(100% - 9px));
-            mask:radial-gradient(farthest-side,transparent calc(100% - 9px),#000 calc(100% - 9px))}
-  .rdial.busy .rdial-prog{background:conic-gradient(var(--sev,var(--accent)) 90deg,#2a3a4d 0deg);animation:sp .8s linear infinite}
-  /* the map-page dial is shown in EVERY layout (the panel header is dropped) — a solid
-     BLACK disc + black outline so the countdown reads over any map. It sits at the map's
-     TOP-RIGHT, clearing the docked 360px panel (right:376 — NO safe-area add, since the
-     panel itself sits flush at right:0; adding it double-counted and left a gap). In
-     portrait the panel is an overlay sheet, so it moves to the true screen right edge. */
-  #map-refresh{position:absolute;z-index:16;top:calc(var(--sa-t) + 12px);right:376px;
-    width:34px;height:34px;   /* compact dial — the 9px arc dominates, small dark centre */
-    display:block;background:#000;border-radius:50%;box-shadow:0 0 0 2px #000}
-  @media (max-width:1000px) and (orientation:portrait){ #map-refresh{right:calc(14px + var(--sa-r))} }
   /* ---------- canifly — the static drone-preflight chart ----------
      The flyability grid, and nothing else — no title/coords/refresh line.
      The pane is sized to its CONTENT (the chart never changes size) and is the
@@ -165,10 +141,9 @@
   .tmsg{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
     padding:8px 11px;border-radius:8px;font-size:13px;color:var(--ink);animation:sl .25s ease}
   @keyframes sl{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
-  @keyframes sp{to{transform:rotate(360deg)}}
   /* ---------- SITREP briefing panel (right side) ----------
-     No header in any layout — the CANIFLY verdict + refresh dial live on the map's
-     corners, so the panel is just the chart + cards. #sit-title is a hidden, empty
+     No header in any layout — the CANIFLY verdict lives on the map's corner, so the
+     panel is just the chart + cards. #sit-title is a hidden, empty
      canonical-verdict element (the on-map #map-title mirrors it); sitrepTick stamps it. */
   /* CANIFLY verdict tag at the map's TOP-left — the single visible title now the panel
      header is gone, shown in EVERY layout. Same green/amber/red + breach-flash as the
@@ -294,9 +269,9 @@
 </svg>
 
 <!-- CANIFLY panel — desktop / tablet: docked right. iPhone portrait: a full-screen
-     page toggled with the map. There is NO header (the CANIFLY verdict + refresh dial
-     live on the map's corners); the panel is just the flyability chart, then the
-     SITREP cards (scroll). -->
+     page toggled with the map. There is NO header (the CANIFLY verdict lives on the
+     map's corner); the panel is just the flyability chart, then the SITREP cards
+     (scroll). -->
 <div id="sitrep" class="panel">
   <!-- Canonical verdict element: HIDDEN (the on-map #map-title mirrors it) and empty,
        kept out of the visible layout so no "header" can flash before the render-blocking
@@ -311,13 +286,6 @@
     <div class="sit-empty">ACQUIRING POSITION…</div>
   </div>
 </div>
-
-<!-- refresh dial duplicated at the map's top-right — shown only on an iPhone in
-     portrait (map OR panel visible, not both) so the countdown / tap-to-refresh is
-     reachable from the map page. -->
-<button id="map-refresh" class="rdial" type="button" title="tap to refresh · auto every 5 s" aria-label="refresh data now">
-  <span class="rdial-prog"></span>
-</button>
 
 <!-- CANIFLY verdict tag mirrored at the map's bottom-left — shown on an iPhone
      (portrait's map page, and landscape where the header is dropped) so the
@@ -361,11 +329,32 @@ async function getJSON(url,opts={}){
     return await r.json();
   } finally { clearTimeout(to); }
 }
+// ArcGIS FeatureServer paging. A single query is capped by the service's
+// maxRecordCount (and truncated with exceededTransferLimit=true), so a whole-US
+// pull can't come back in one shot. Page through it: keep requesting the next
+// slice (resultOffset stepped by what we ACTUALLY got, so a smaller server cap
+// than we ask for is handled) until the service stops flagging more to come.
+// Returns one merged FeatureCollection (fail-soft — throws only if the FIRST
+// page fails; a later page failing keeps the pages already gathered).
+async function pagedGeoJSON(base,opts={}){
+  let offset=0,out=null;
+  for(let guard=0;guard<40;guard++){          // hard stop ≈ 80k features
+    let j;
+    try{ j=await getJSON(base+`&resultOffset=${offset}&resultRecordCount=2000`,opts); }
+    catch(e){ if(!out) throw e; break; }       // first page must succeed; later ones fail-soft
+    if(!j||!j.features||!j.features.length) break;
+    if(!out) out=j; else out.features=out.features.concat(j.features);
+    if(!j.exceededTransferLimit) break;         // service signalled this was the last slice
+    offset+=j.features.length;                  // step by real count (server cap ≤ our ask)
+  }
+  if(out) delete out.exceededTransferLimit;
+  return out;
+}
 // All times shown in the user's LOCAL time — the timezone detected for their
 // location (USER.tz, from IP geolocation), falling back to the browser's zone.
 const tzOpt = () => USER.tz ? {timeZone:USER.tz} : {};
 // THE data-refresh cadence, seconds. Everything live reads this one knob: the
-// countdown dial + pulse, the every-pulse feeds (refresh:REFRESH_S below) and the
+// auto-refresh pulse, the every-pulse feeds (refresh:REFRESH_S below) and the
 // per-layer cadences (refresh/REFRESH_S pulses). Feeds with their own natural
 // cadence declare it explicitly (NWS 15 s, SPC 15 min, Kp ~3 min, radar via
 // RADAR_BUST_S, winds-aloft via ALOFT_TTL_MS) so a faster pulse doesn't hammer
@@ -464,12 +453,13 @@ function acFeatures(j,kind){
 // Features last loaded for a layer id — read from our own LAYER_STATE, never
 // from MapLibre's private source internals (which can break on any upgrade).
 function featsIn(id){const st=LAYER_STATE[id];return (st&&st.features)||[];}
-// STATIC REGIONAL CACHE — airspace/NPS barely change (56-day chart cycle) and
-// the FAA service can't return the whole US in one shot (~50 MB, times out) and
-// ignores server generalisation, so we can't "pull the entire thing". Instead we
-// pull a fixed REGION_DEG box around the crosshair ONCE, cache it, draw it at
-// EVERY zoom, and drop it from the periodic refresh — only re-pulling when the
-// crosshair travels past REGION_REFETCH_KM (so the cached region still overlaps).
+// STATIC REGIONAL CACHE — used by the NPS lands layer, whose whole-US boundary
+// geometry is far too large to pull nationwide (tens of MB — every park unit at
+// full precision). Instead pull a fixed REGION_DEG box around the crosshair ONCE,
+// cache it, draw it at EVERY zoom, and drop it from the periodic refresh — only
+// re-pulling when the crosshair travels past REGION_REFETCH_KM (so the cached
+// region still overlaps). (FAA airspace, a bounded set, is instead pulled whole-US
+// once at boot — a NATIONAL cache; see its layer below.)
 const REGION_DEG=1.25;                 // half-box, ° (~85 mi each way around you)
 const REGION_REFETCH_KM=85;            // travel this far → re-pull the region
 function regionEnv(){
@@ -887,29 +877,33 @@ defLayer({
   //   • National_Defense_Airspace_TFR_Areas — the standing national-defense
   //     no-fly zones (a zone in range forces the canifly ceiling to 0). Drawn
   //     in red so they read as "avoid", but still light.
-  // STATIC regional cache (see regionEnv): pulled once for a box around you,
-  // shown at every zoom, refreshed only when you travel — not on the pulse.
-  // This is a VISUAL layer only — the canifly gate still runs its own strict
-  // point-buffer query, so a soft-failing overlay never understates a no-fly.
+  // NATIONAL cache: the whole USA is pulled ONCE at boot (before the location fix,
+  // alongside the mil/radar/NWS feeds) and drawn at every zoom — it never re-pulls
+  // on travel or the pulse. The drawn set is bounded (controlled airspace B/C/D +
+  // surface-E2, national-defense TFRs, low SUA, NSUFR, stadiums), so — filtered
+  // server-side and PAGED — it comes back whole-US in one cache. (The huge
+  // en-route Class-E5 and NPS lands are excluded/left regional; those genuinely
+  // can't be pulled nationwide.) This is a VISUAL layer only — the canifly gate
+  // still runs its own strict point-buffer query, so a soft-failing overlay never
+  // understates a no-fly.
   id:'airspace', label:'FAA airspace + restrictions', color:'#5b8def',
-  static:true, geom:'fill', colored:true, fillOpacity:0.05,
+  national:true, geom:'fill', colored:true, fillOpacity:0.05,
   lineWidth:1, lineOpacity:0.34,
   loader: async ()=>{
-    const env=regionEnv();
+    // whole-US query (no geometry envelope) — pageable via pagedGeoJSON
     const q=(svc,fields,where)=>`https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services/${svc}/FeatureServer/0/query`
-      +`?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326`
-      +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&outFields=${fields}`
-      +(where?`&where=${encodeURIComponent(where)}`:'')+`&f=geojson`;
+      +`?where=${encodeURIComponent(where||'1=1')}&outSR=4326`
+      +`&returnGeometry=true&outFields=${fields}&f=geojson`;
     // five keyless CORS feeds from the FAA org, each fail-soft (a soft failure just
     // omits its features — the canifly gate still runs its own strict query).
     // Class_Airspace is filtered SERVER-side to the classes we draw (B/C/D + the
     // surface-E2), so the huge en-route Class-E5 geometry never hits the wire.
     const [cls,def,sua,nsufr,stad]=await Promise.all([
-      getJSON(q('Class_Airspace','NAME,CLASS,LOCAL_TYPE',"CLASS IN ('B','C','D') OR LOCAL_TYPE='CLASS_E2'"),{timeout:20000}).catch(()=>null),
-      getJSON(q('National_Defense_Airspace_TFR_Areas','NAME'),{timeout:12000}).catch(()=>null),
-      getJSON(q('Special_Use_Airspace','NAME,TYPE_CODE,UPPER_VAL,LOWER_VAL'),{timeout:15000}).catch(()=>null),
-      getJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:12000}).catch(()=>null),
-      getJSON(q('Stadiums','NAME'),{timeout:12000}).catch(()=>null)]);
+      pagedGeoJSON(q('Class_Airspace','NAME,CLASS,LOCAL_TYPE',"CLASS IN ('B','C','D') OR LOCAL_TYPE='CLASS_E2'"),{timeout:25000}).catch(()=>null),
+      pagedGeoJSON(q('National_Defense_Airspace_TFR_Areas','NAME'),{timeout:15000}).catch(()=>null),
+      pagedGeoJSON(q('Special_Use_Airspace','NAME,TYPE_CODE,UPPER_VAL,LOWER_VAL'),{timeout:25000}).catch(()=>null),
+      pagedGeoJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:15000}).catch(()=>null),
+      pagedGeoJSON(q('Stadiums','NAME'),{timeout:15000}).catch(()=>null)]);
     const feats=[];
     const push=(geom,props)=>{ if(geom) feats.push({type:'Feature',geometry:geom,properties:props}); };
     // controlled airspace around airports (advisory, aeronautical blue/magenta)
@@ -951,8 +945,9 @@ defLayer({
   // recreation areas…). NPS policy prohibits launching, landing, or operating a
   // drone from within a unit's boundary, so for a preflight this is a hard
   // no-fly. Drawn LIGHTLY in park green. Keyless NPS ArcGIS boundary service,
-  // CORS *. STATIC regional cache (see regionEnv) like airspace — pulled once
-  // for a box around you, drawn at every zoom, re-pulled only on travel. The
+  // CORS *. STATIC regional cache (see regionEnv) — pulled once for a box around
+  // you, drawn at every zoom, re-pulled only on travel. (Unlike FAA airspace, NPS
+  // boundaries are too large to pull nationwide, so this stays regional.) The
   // boundary geometry is generalised ~150 m to stay light. Sunk beneath the
   // aircraft at boot.
   id:'nps', label:'National Park Service lands', color:'#3fa46a',
@@ -1170,13 +1165,10 @@ function pulse(force){
   // cadence, FAA airspace via its location-keyed cache. loadWeather self-throttles
   // (~5 min / >2 km moves) unless forced.
   flyRefresh(); loadWeather(force); refreshRadar();
-  refreshBase=Date.now();   // the refresh dials refill from here (updateLoadRing)
+  refreshBase=Date.now();   // restart the auto-refresh countdown from zero
 }
-function forceRefresh(){ pulse(true); }   // tapping a refresh dial / the DATA card
-// fires the pulse at the end of each cycle; the dial fill is painted by updateLoadRing
+function forceRefresh(){ pulse(true); }   // the DATA card taps this to force a full refresh
 function refreshTick(){ if(Date.now()-refreshBase>=REFRESH_S*1000) pulse(); }
-// the map-corner refresh dial forces a refresh on tap
-$('#map-refresh').addEventListener('click',forceRefresh);
 
 // No layer selector: every layer's map source + style is created here and stays
 // on (SPC is defaultOff = hidden, loaded only to feed the SITREP outlook card).
@@ -1308,17 +1300,29 @@ function wxCard(wxState, wn){
    ===================================================================== */
 let userMarker=null, sitrepTimer=null;
 
-// Frame the map to a `miles`-radius circle around (lat,lon). fitBounds honours
-// the panel padding, so the point lands centred in the visible area between the
-// panels.
+// FIXED framing zoom — a pure function of LATITUDE (never the viewport), so the
+// locked/default view shows the SAME scale on every device: phone portrait AND
+// landscape, tablet, desktop. VIEW_REF_PX is the on-screen pixel diameter the
+// `miles`-radius circle targets; the Web-Mercator metres-per-pixel relation then
+// fixes the zoom for that latitude. (We used to fit a mile box to the padded
+// viewport, which made the zoom depend on the window aspect — landscape came out
+// most zoomed-out. This makes all layouts identical.)
+const VIEW_REF_PX=475;   // tuned to the comfortable desktop framing of the 10 mi view
+function viewZoom(lat,miles){
+  const span=2*(miles||VIEW_MI)*MI_TO_KM*1000;              // circle diameter, metres
+  const mpp0=40075016.686*Math.cos(lat*Math.PI/180)/512;   // metres/pixel at zoom 0 (512-px tiles)
+  return Math.max(0, Math.log2(VIEW_REF_PX*mpp0/span));
+}
+// Frame the map to a `miles`-radius circle around (lat,lon) at the fixed viewZoom,
+// so the framed scale is identical across devices. The map's padding (set on
+// desktop) still lands the point centred in the open area left of the panel.
 // (radii RED_MI / GREY_MI / VIEW_MI are fixed constants defined with the settings)
 function flyToRadiusMi(lat,lon,miles,opts){
   cancelCenterZoom();
-  const {dLat,dLon}=geoDeltas(miles*MI_TO_KM,lat);
+  const z=viewZoom(lat,miles);
   try{
-    gl.fitBounds([[lon-dLon,lat-dLat],[lon+dLon,lat+dLat]],
-      Object.assign({duration:1200,maxZoom:15},opts||{}));
-  }catch(e){ gl.flyTo({center:[lon,lat],zoom:11}); }
+    gl.flyTo(Object.assign({center:[lon,lat],zoom:z,duration:1200},opts||{}));
+  }catch(e){ gl.jumpTo({center:[lon,lat],zoom:z}); }
 }
 
 // ---- FIX PIPELINE — dead simple. The GPS watch starts at load; pings are COLLECTED
@@ -1445,7 +1449,16 @@ let _framing=false, _frameT=null;
 function frameNow(lat,lon){
   _framing=true; clearTimeout(_frameT);
   flyToRadiusMi(lat,lon,VIEW_MI);
-  _frameT=setTimeout(()=>{ _framing=false; },1300);   // fitBounds is 1200ms + a small buffer
+  // flyTo is 1200ms + a small buffer. When it settles, correct the zoom to EXACTLY
+  // the fixed view scale: flyTo lands a touch low under the desktop panel padding, so
+  // without this the locked scale would differ between padded (desktop/tablet) and
+  // unpadded (phone) layouts. A one-time setZoom (input is dead while locked, so it
+  // stays put) — no durable min/max pin that could get stuck locked.
+  _frameT=setTimeout(()=>{
+    _framing=false;
+    const z=viewZoom(gl.getCenter().lat);
+    if(Math.abs(gl.getZoom()-z)>0.01){ cancelCenterZoom(); gl.setZoom(z); }
+  },1300);
 }
 function lockFollow(){
   if(locMode!==2||_framing||USER.lat==null) return;
@@ -1976,8 +1989,8 @@ function sitrepTick(){
   const sevCol=SEV_COL[titleSev]||SEV_COL[0];
   if(gl.getLayer('ly-ring')) gl.setPaintProperty('ly-ring','line-color',sevCol);
   if(gl.getLayer('ly-warnring')) gl.setPaintProperty('ly-warnring','line-color',sevCol);
-  // --sev drives the map-corner controls that read it in CSS: the refresh-dial fill
-  // and the lock button's glyph both track the verdict colour, like the rings + title.
+  // --sev drives the map-corner control that reads it in CSS: the lock button's glyph
+  // tracks the verdict colour, like the rings + the on-map title.
   document.documentElement.style.setProperty('--sev',sevCol);
   // The red flashing LOW AIRCRAFT breach is the most immediate, out-of-nowhere threat
   // (a manned aircraft low and in range), so it jumps to the very TOP of the pile —
@@ -2070,8 +2083,7 @@ gl.on('resize',refreshViewport);
   gl.on('click',open);
   // one big "back to the map" target: the whole panel (the chart, any empty space)
   // closes on tap; only a tap on a card is exempt, falling through to its own fly-to /
-  // open action. (The refresh dial now lives on the map, outside the panel, so it
-  // needs no exemption.)
+  // open action.
   $('#sitrep').addEventListener('click',e=>{
     if(!MQ_MOBILE.matches) return;                    // desktop: docked panel, no toggle
     if(e.target.closest('.sit-row')) return;
@@ -2383,9 +2395,9 @@ window.__sitrep.fly={FLY,SPEC,LIM,RNG,paint:flyPaint,refresh:flyRefresh,unknownS
 // Hard airspace restriction under the crosshair, read from the loaded map layer:
 // a Prohibited area (PROH) or a national-security UAS zone (NSUF) that grounds the
 // chart. Defense zones are excluded here — the canifly FAA cap already grounds
-// those. The layer is a static regional cache (pulled once for a box around the
-// crosshair, kept at every zoom, re-pulled only on travel) so a grounding zone
-// under the crosshair can't silently vanish when the view widens; the
+// those. The layer is a national cache (the whole US pulled once at boot, kept at
+// every zoom, never re-downloaded) so a grounding zone under the crosshair can't
+// silently vanish when the view widens; the
 // authoritative canifly point-query still runs regardless. Conditional/advisory
 // zones (Restricted/stadium = amber "no-fly if active"; MOA/Warning/Alert/Danger
 // = neutral "advisory only") never ground the chart — they're schedule-only or
@@ -2665,16 +2677,6 @@ function flyOnMove(){
   flyRefresh();
 }
 
-// Paint the refresh dial(s): the arc FILLS from 0→360° across the refresh cycle
-// (a numberless countdown), and while ANY map layer / the canifly chart / the
-// weather pull is mid-fetch the dial SPINS instead (the .busy class swaps the fill
-// for a rotating arc — this folds in the old load spinner). Runs on a 200 ms tick.
-function updateLoadRing(){
-  const busy = flyBusy || wxBusy || LAYERS.some(cfg=>{ const st=LAYER_STATE[cfg.id]; return st&&st.loading; });
-  const deg = (Math.min(1,(Date.now()-refreshBase)/(REFRESH_S*1000))*360).toFixed(0)+'deg';
-  const d=$('#map-refresh'); if(d){ d.classList.toggle('busy',busy); d.style.setProperty('--rp',deg); }
-}
-
 /* =====================================================================
    9a. EXTRA-ALERT AIRCRAFT HALO — a pulsing red/white beacon under any aircraft
    breaching the range+altitude threshold (the same LOW AIRCRAFT set that reds
@@ -2745,37 +2747,25 @@ function scheduleRing(){ if(_ringRaf) return; _ringRaf=requestAnimationFrame(()=
 gl.on('move',scheduleRing);
 
 // Never zoom in tighter than the VIEW radius (10 mi = 2× the grey ring): the view
-// always shows at least a 10-mile-radius extent. We enforce this as a dynamic MAX
-// ZOOM — the zoom at which a VIEW_MI-radius box just fills the padded viewport.
-// Zooming in past it is blocked (the center-anchored zoom clamp reads getMaxZoom),
-// and panning north auto-eases the camera back out. Recomputed on latitude change
-// / resize since the mile↔zoom relationship depends on cos(lat) and the viewport.
-const RING_ZOOM_HARD=16;   // the absolute max-zoom ceiling (matches map init)
+// always shows at least a 10-mile-radius extent. Enforced as a dynamic MAX ZOOM set
+// to the fixed, viewport-independent viewZoom — so the zoom-in ceiling is the same
+// SCALE on every device. Zooming in past it is blocked (the center-anchored zoom
+// clamp reads getMaxZoom); the base minZoom lets you zoom OUT once unlocked. The
+// EXACT locked view scale is landed by frameNow's settle correction (see frameNow),
+// not by a durable min==max pin — a pin could get stuck locked if something cleared
+// the lock without recomputing. Recomputed only on latitude change (viewZoom is a
+// pure function of cos(lat)).
+const RING_ZOOM_HARD=16;    // the absolute max-zoom ceiling (matches map init)
+const BASE_MIN_ZOOM=1.1;    // the map's init minZoom — the zoom-out floor
 let _ringZoomKey=null;
 function enforceRingZoom(){
   const c=gl.getCenter();
-  // Only recompute when an INPUT to the cap actually changed (latitude band via
-  // cos(lat), the pixel viewport, or the map padding) — otherwise every pan would
-  // needlessly churn the max-zoom.
-  const ct=gl.getContainer();
-  const key=c.lat.toFixed(2)+'|'+ct.clientWidth+'x'+ct.clientHeight+'|'
-    +(_pad?[_pad.top,_pad.left,_pad.right,_pad.bottom].join(','):'0');
+  const key=c.lat.toFixed(2);
   if(key===_ringZoomKey) return;
   _ringZoomKey=key;
-  // the fixed 10 mi VIEW radius and the shared °↔km math
-  const {dLat,dLon}=geoDeltas(VIEW_MI*MI_TO_KM,c.lat);
-  // cameraForBounds CLAMPS its result to the current maxZoom, so from a locked-in
-  // (zoomed-to-the-cap) state it could only ever ratchet the cap DOWN and never
-  // back up when the ring is made smaller. Lift the cap to the hard ceiling first
-  // so the true fit zoom can be measured, then apply the real cap.
-  const prev=gl.getMaxZoom();
-  if(prev<RING_ZOOM_HARD) gl.setMaxZoom(RING_ZOOM_HARD);
-  let z;
-  try{ const cam=gl.cameraForBounds([[c.lng-dLon,c.lat-dLat],[c.lng+dLon,c.lat+dLat]],{padding:_pad||0}); z=cam&&cam.zoom; }catch(e){}
-  const cap=(z!=null&&isFinite(z))
-    ? Math.max(gl.getMinZoom(),Math.min(RING_ZOOM_HARD,z)) : prev;
-  if(Math.abs(cap-prev)>0.02) cancelCenterZoom();
-  gl.setMaxZoom(cap);   // also restores from the temporary hard-ceiling lift
+  const cap=Math.max(BASE_MIN_ZOOM,Math.min(RING_ZOOM_HARD,viewZoom(c.lat)));
+  if(gl.getMinZoom()!==BASE_MIN_ZOOM) gl.setMinZoom(BASE_MIN_ZOOM);
+  if(Math.abs(gl.getMaxZoom()-cap)>0.02){ cancelCenterZoom(); gl.setMaxZoom(cap); }
 }
 gl.on('moveend',enforceRingZoom);
 gl.on('resize',enforceRingZoom);
@@ -2810,24 +2800,26 @@ gl.on('load',()=>{
     paint:{'line-color':SEV_COL[0],'line-width':1.5,'line-opacity':0.72,'line-dasharray':[2,2]}});
   updateRing();
   enforceRingZoom();   // establish the initial ring-≤-1/3 max-zoom cap
-  // Pull DYNAMIC, NON-VIEWPORT layers once on load (mil/sos are small global queries;
-  // SPC feeds the SITREP outlook card). We SKIP the pre-fix default centre for:
-  //  • STATIC layers (airspace/NPS) — a regional cache, and
-  //  • the heavy VIEWPORT aircraft feed — a 250 nm query over the US interior before we
-  //    know where you are is pure waste (thousands of planes, the slowest pull) and gets
-  //    thrown away the moment the fix lands.
-  // The first location fix's moveend loads BOTH around YOU (fallback below if none lands).
+  // Pull the location-INDEPENDENT layers once on load, BEFORE any fix — nationwide
+  // context that's valid wherever you turn out to be:
+  //  • DYNAMIC non-viewport feeds (mil/sos small global queries; SPC → SITREP card)
+  //  • the NATIONAL airspace cache — the whole USA in one paged pull, drawn right
+  //    away and never re-downloaded (it doesn't depend on where you are).
+  // We SKIP only:
+  //  • STATIC regional layers (NPS — too large to pull nationwide; a travel cache), and
+  //  • the heavy VIEWPORT aircraft feed — a query over the US interior before we know
+  //    where you are is pure waste (the slowest pull) and is thrown away on the fix.
+  // The first location fix's moveend loads THOSE around YOU (fallback below if none lands).
   LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; if(!cfg.static && !cfg.viewport) runLayer(cfg); });
-  // Normally the settled fix's frame moveend loads EVERYTHING around YOU — the region
-  // cache (airspace/NPS), the aircraft feed, the chart data and the weather card. This
-  // is the ONLY-if-no-fix fallback: if location never resolves (GPS denied + IP dead),
-  // pull around the default centre so the app isn't empty. Timed past the 3 s GPS
-  // settle AND the 6 s IP fallback so it can't race a fix that's still resolving.
+  // Normally the settled fix's frame moveend loads the rest around YOU — the NPS region
+  // cache, the aircraft feed, the chart data and the weather card. This is the
+  // ONLY-if-no-fix fallback: if location never resolves (GPS denied + IP dead), pull
+  // around the default centre so the app isn't empty. Timed past the 3 s GPS settle
+  // AND the 6 s IP fallback so it can't race a fix that's still resolving.
   setTimeout(()=>{ if(USER.lat==null){ ensureStaticRegion();
     LAYERS.forEach(cfg=>{ if(cfg.viewport) runLayer(cfg); });
     flyRefresh(); loadWeather(true); } },GEO_IP_FALLBACK_MS+2500);
-  refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // refresh pulse + clock
-  updateLoadRing(); setInterval(updateLoadRing,200);   // map-corner refresh dial
+  refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // auto-refresh pulse (5 s)
   loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare (SITREP card)
   setMapPadding();
   enforceRingZoom();   // recompute the cap now that desktop panel padding is applied
