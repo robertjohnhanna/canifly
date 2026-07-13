@@ -2063,7 +2063,7 @@ function startAcPulse(){
    ===================================================================== */
 // ring colour by title severity 0·1·2 — matches --accent / --warn / --danger
 const SEV_COL=['#2fe07a','#ffb454','#ff4455'];
-const RING_N=96;   // vertices — a smooth circle at any zoom
+const RING_N=384;   // vertices — enough that the ring reads as a true circle (segments < 2 px)
 // a closed [lon,lat] ring approximating a `km`-radius circle (equirectangular — exact
 // enough at these radii); shared by the range rings and the stadium buffers
 function circleRing(lat,lon,km,n){
