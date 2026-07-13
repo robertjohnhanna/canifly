@@ -583,7 +583,7 @@ defLayer({
     // five feeds. Class_Airspace is filtered server-side to B/C/D + surface-E2 so the huge
     // Class-E5 never hits the wire; it's the heavy one, so it gets the longest timeout.
     const [cls,def,sua,nsufr,stad]=await Promise.all([
-      getJSON(q('Class_Airspace','NAME,CLASS,LOCAL_TYPE',"CLASS IN ('B','C','D') OR LOCAL_TYPE='CLASS_E2'"),{timeout:15000}).catch(()=>null),
+      getJSON(q('Class_Airspace','NAME,CLASS,LOCAL_TYPE',"CLASS IN ('B','C','D') OR LOCAL_TYPE='CLASS_E2'"),{timeout:10000}).catch(()=>null),
       getJSON(q('National_Defense_Airspace_TFR_Areas','NAME'),{timeout:9000}).catch(()=>null),
       getJSON(q('Special_Use_Airspace','NAME,TYPE_CODE,UPPER_VAL,LOWER_VAL'),{timeout:10000}).catch(()=>null),
       getJSON(q('Part_Time_National_Security_UAS_Flight_Restrictions','Facility,Floor,Ceiling'),{timeout:9000}).catch(()=>null),
@@ -732,6 +732,9 @@ function ensureMapLayer(cfg){
   gl.setLayoutProperty('ly-'+cfg.id,'visibility',vis);
   if(gl.getLayer('lyl-'+cfg.id)) gl.setLayoutProperty('lyl-'+cfg.id,'visibility',vis);
 }
+// retry backoff while a layer is failing — short and bounded (1.5s, 3s, 4.5s, cap 6s) so a
+// recovering feed is caught within seconds. Shared by the quickTimer and the pulse skip gate.
+const failBackoffMs=n=>Math.min(6000,1500*n);
 
 async function runLayer(cfg){
   const st=LAYER_STATE[cfg.id];
@@ -742,9 +745,11 @@ async function runLayer(cfg){
   st.loading=true; st.loadStart=Date.now();
   try{
     if(st.quickTimer){ clearTimeout(st.quickTimer); st.quickTimer=null; }
-    // up to 3 attempts with exponential backoff before giving up this cycle
+    // one quick in-loop retry (a single dropped connection often clears at once); a
+    // persistent failure hands off to the fast quickTimer below rather than burning more
+    // time here (these are small queries — recovery should be seconds, not tens of seconds)
     let lastErr=null;
-    for(let attempt=0;attempt<3;attempt++){
+    for(let attempt=0;attempt<2;attempt++){
       try{
         const fc=await cfg.loader();
         if(myGen!==st.gen) return;               // superseded by a newer refresh — drop this result
@@ -760,19 +765,20 @@ async function runLayer(cfg){
       }catch(e){
         lastErr=e;
         if(myGen!==st.gen) return;                // a newer refresh owns the layer now
-        if(attempt<2){
-          await new Promise(r=>setTimeout(r,1200*Math.pow(3,attempt))); // 1.2s, 3.6s
+        if(attempt<1){
+          await new Promise(r=>setTimeout(r,500));
           if(myGen!==st.gen) return;
         }
       }
     }
-    // Failed this cycle — NEVER wipe the map; keep features and retry on a bounded
-    // backoff (6→30s) instead of waiting a full refresh interval.
+    // Failed this cycle — NEVER wipe the map; keep features and retry on a SHORT bounded
+    // backoff (1.5→6s) so a recovering feed is caught within a few seconds (a viewport
+    // layer like airspace has no pulse cadence — this quickTimer is its only retry path).
     st.fails=(st.fails||0)+1; st.failAt=Date.now();   // the pulse backs off while failing
     if(!st.failSince) st.failSince=Date.now();          // first fail of a run → start the sustained clock
     console.warn('[layer '+cfg.id+']',lastErr&&lastErr.message);
     if(!st.quickTimer){
-      const delay=Math.min(30000,6000*st.fails);
+      const delay=failBackoffMs(st.fails);
       st.quickTimer=setTimeout(()=>{ st.quickTimer=null; runLayer(cfg); },delay);
     }
   } finally {
@@ -801,8 +807,8 @@ function pulse(force){
       // that reset the countdown can't push a layer's refresh past a whole cycle
       const everyN=Math.max(1,Math.round(cfg.refresh/REFRESH_S));
       if(pulseCount%everyN!==0) return;
-      // a failing feed backs off (6→30 s); the quickTimer set at failure owns the retry
-      if(st.fails && Date.now()-(st.failAt||0)<Math.min(30000,6000*st.fails)) return;
+      // a failing feed backs off on the shared short window; the quickTimer owns the retry
+      if(st.fails && Date.now()-(st.failAt||0)<failBackoffMs(st.fails)) return;
     }
     runLayer(cfg);
   });
