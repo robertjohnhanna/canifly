@@ -196,22 +196,26 @@ gate input.
 
 | Layer | Source | Refresh |
 |---|---|---|
-| Aircraft (250 nm around centre, civil) — loads around YOU (the heavy query skips the pre-fix default centre, so the first pull isn't a wasted sweep of the US interior) | airplanes.live → adsb.fi fallback | on move · 15 s |
-| Military aircraft (worldwide) | ADS-B `/mil` | 15 s |
-| Emergency squawks (worldwide) | ADS-B `/squawk` | 15 s |
+| Aircraft (250 nm around centre, civil) — loads around YOU (the heavy query skips the pre-fix default centre, so the first pull isn't a wasted sweep of the US interior) | airplanes.live → adsb.fi fallback | on move · 5 s |
+| Military aircraft (worldwide) | ADS-B `/mil` | 5 s |
+| Emergency squawks (worldwide) | ADS-B `/squawk` | 5 s |
 | NWS warning polygons (US) — red outline for Extreme/Severe, amber otherwise | api.weather.gov | 15 s |
-| NEXRAD reflectivity mosaic | Iowa State Mesonet | 15 s |
+| NEXRAD reflectivity mosaic | Iowa State Mesonet | 60 s (source updates ~5 min) |
 | SPC Day-1 outlook (hidden; feeds cards) | NOAA SPC | 15 min |
 | FAA airspace + restrictions (regional cache) — loads around YOU once the fix settles (skips the pre-fix default centre, same as the aircraft feed) | FAA ArcGIS ×5 services | on travel |
 | NPS lands (regional cache) | NPS ArcGIS | on travel |
 
-**Two refresh classes.** *Dynamic* feeds (aircraft, radar, weather, Kp, NWS,
-SPC) ride the 15 s pulse and refetch on pan/zoom. *Static* feeds (FAA airspace,
-NPS lands) barely change, and the full US is ~50 MB (times out) — so they're a
-**regional cache**: pulled once for a ~85-mile box around you, drawn at *every*
-zoom, and re-pulled only when you travel out of that region. That's why
-airspace stays painted when you zoom out, and it never touches the periodic
-pulse. Every loader retries with backoff and a failure never wipes the map.
+**One pulse, per-feed cadences.** The unified refresh pulse fires every **5 s** —
+that's how often live traffic updates and the countdown dial refills. Each feed
+then keeps its own natural cadence on top of it (NWS 15 s, winds-aloft 15 s, Kp
+~3 min, radar 60 s, SPC 15 min), so the fast pulse never hammers a source whose
+data doesn't change that fast. *Static* feeds (FAA airspace, NPS lands) barely
+change, and the full US is ~50 MB (times out) — so they're a **regional cache**:
+pulled once for a ~85-mile box around you, drawn at *every* zoom, and re-pulled
+only when you travel out of that region. That's why airspace stays painted when
+you zoom out, and it never touches the periodic pulse. Every loader retries with
+backoff, a failing feed backs off instead of being re-hammered each pulse, and a
+failure never wipes the map.
 
 The map has **no click popups** — everything inside the range ring is described
 by the SITREP cards, so the map stays a clean picture and the panel carries the
@@ -237,7 +241,7 @@ the whole screen (the panel uses the dynamic viewport height so it never spills 
 Safari's address bar). The map-corner controls move to the true screen edges there,
 since the panel is an overlay sheet rather than docked.
 
-A **refresh dial** — a circular sweep that fills over the 15 s cycle (a
+A **refresh dial** — a circular sweep that fills over the 5 s cycle (a
 numberless countdown ring) — sits at the map's top-right corner; it **spins** while
 a feed is fetching (it replaces the old corner load spinner) and a tap forces an
 immediate refresh. Its fill **tracks the CANIFLY verdict colour** (green/amber/red),

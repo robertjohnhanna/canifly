@@ -90,12 +90,10 @@
     border:1px solid var(--line)}
   /* REFRESH DIAL — a circular sweep that FILLS over the refresh cycle (a number-
      less countdown); tap = refresh now. While a feed is fetching it spins (a
-     rotating arc), folding in the old load spinner. Two instances share .rdial:
-     one right-justified in the SITREP header, and a duplicate at the map's
-     top-right shown on an iPhone (portrait's map page, and landscape where the
-     header is dropped) so the countdown / tap-to-refresh stays reachable. */
-  .rdial{position:relative;width:24px;height:24px;flex:0 0 auto;border:none;background:none;
-    padding:0;cursor:pointer;color:var(--ink-dim);-webkit-user-select:none;user-select:none}
+     rotating arc), folding in the old load spinner. ONE instance (#map-refresh),
+     at the map's top-right in every layout. */
+  .rdial{position:relative;border:none;background:none;
+    padding:0;cursor:pointer;-webkit-user-select:none;user-select:none}
   /* the countdown fill tracks the CANIFLY verdict (--sev, set by sitrepTick): green
      clear / amber reduced-or-unverified / red grounded — falling back to accent green
      before the first tick. A THICK arc (9px) on a compact dial with a small dark
@@ -317,7 +315,7 @@
 <!-- refresh dial duplicated at the map's top-right — shown only on an iPhone in
      portrait (map OR panel visible, not both) so the countdown / tap-to-refresh is
      reachable from the map page. -->
-<button id="map-refresh" class="rdial" type="button" title="tap to refresh · auto every 15 s" aria-label="refresh data now">
+<button id="map-refresh" class="rdial" type="button" title="tap to refresh · auto every 5 s" aria-label="refresh data now">
   <span class="rdial-prog"></span>
 </button>
 
@@ -347,6 +345,9 @@ const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=
 // JS layout decision reads this — a 900/1000 mix once left the 901–1000px range
 // with sheet panels but desktop map padding.
 const MQ_MOBILE=window.matchMedia('(max-width:1000px) and (orientation:portrait)');
+// Coarse pointer (finger / iPad trackpad cursor) — decides which side owns panning:
+// MapLibre's dragPan on desktop, the custom pointer navigation on touch.
+const COARSE=!!(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches);
 function toast(msg){
   const t=el('div','tmsg',msg);
   $('#toast').appendChild(t);
@@ -364,10 +365,12 @@ async function getJSON(url,opts={}){
 // location (USER.tz, from IP geolocation), falling back to the browser's zone.
 const tzOpt = () => USER.tz ? {timeZone:USER.tz} : {};
 // THE data-refresh cadence, seconds. Everything live reads this one knob: the
-// countdown clock + pulse, the every-pulse feeds (refresh:REFRESH_S below), the
-// per-layer cadences (refresh/REFRESH_S pulses), and the radar tile cache-bust
-// window. Change this alone and the whole live board follows.
-const REFRESH_S=15;
+// countdown dial + pulse, the every-pulse feeds (refresh:REFRESH_S below) and the
+// per-layer cadences (refresh/REFRESH_S pulses). Feeds with their own natural
+// cadence declare it explicitly (NWS 15 s, SPC 15 min, Kp ~3 min, radar via
+// RADAR_BUST_S, winds-aloft via ALOFT_TTL_MS) so a faster pulse doesn't hammer
+// sources whose data doesn't change that fast.
+const REFRESH_S=5;
 // persist a setting; storage can be blocked (private mode) and that's fine
 const store=(k,v)=>{ try{ localStorage.setItem(k,String(v)); }catch(e){} };
 // equirectangular °-offsets spanning `km` at a latitude — THE lat/lon↔km math,
@@ -539,12 +542,15 @@ const escapeHtml =s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 /* =====================================================================
    1. MAP — CARTO dark basemap (keyless raster tiles)
    ===================================================================== */
-// NEXRAD base-reflectivity mosaic tiles (Iowa State Mesonet, keyless). The
-// ?bust pulls the latest mosaic on each refresh pulse (tracking the "Xs to
-// update" clock); sharing ONE bust value between the map layer and the PCPN
-// sampler lets them share the browser cache instead of double-fetching tiles.
+// NEXRAD base-reflectivity mosaic tiles (Iowa State Mesonet, keyless). The ?bust
+// pulls the latest mosaic once per RADAR_BUST_S window — the mosaic itself updates
+// every ~5 min at the source, so its cadence is deliberately DECOUPLED from the
+// (faster) refresh pulse: re-busting every pulse would refetch identical tiles.
+// Sharing ONE bust value between the map layer and the PCPN sampler lets them
+// share the browser cache instead of double-fetching tiles.
 const RADAR_URL='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
-const radarBust=()=>Math.floor(Date.now()/(REFRESH_S*1000));   // one window per refresh pulse
+const RADAR_BUST_S=60;
+const radarBust=()=>Math.floor(Date.now()/(RADAR_BUST_S*1000));
 let _radarBust=radarBust();
 const RADAR_TILE=RADAR_URL+'?'+_radarBust;
 function refreshRadar(){
@@ -645,7 +651,7 @@ let cancelCenterZoom=()=>{};
   //      (a finger OR a trackpad click-drag) PANS; TWO pointers (two fingers)
   //      ZOOM around the map CENTRE — never a pan, never a rotate/tilt. Gated to
   //      a coarse pointer, so a desktop mouse keeps MapLibre's dragPan + wheel. ----
-  if(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches){
+  if(COARSE){
     gl.dragPan.disable();
     cvs.style.touchAction='none';   // we own the gestures; stop the browser scrolling/zooming the page
     const pts=new Map();            // active pointerId -> {x,y}
@@ -801,7 +807,7 @@ defLayer({
   // or statements) — the US half of the worldwide warnings picture (GDACS below
   // is the global multi-hazard half). Keyless, CORS *. Polygons where present
   // (tornado / severe-thunderstorm / flash-flood / red-flag warnings carry them).
-  id:'nws', label:'NWS warnings (US)', color:'#ff4455', refresh:REFRESH_S,
+  id:'nws', label:'NWS warnings (US)', color:'#ff4455', refresh:15,   // alerts churn slowly; 15 s is plenty for api.weather.gov
   // outline only — no fill (fillOpacity:0). The coloured polygon border shows
   // each warning; details surface on the SITREP card when it's in range.
   geom:'fill', colored:true, fillOpacity:0,
@@ -1093,7 +1099,7 @@ async function runLayer(cfg){
     // Failed this cycle. NEVER wipe what's on the map — keep the existing
     // features and retry with a short bounded backoff (6→30s) instead of
     // waiting a full refresh interval.
-    st.fails=(st.fails||0)+1;
+    st.fails=(st.fails||0)+1; st.failAt=Date.now();   // the pulse backs off while failing
     console.warn('[layer '+cfg.id+']',lastErr&&lastErr.message);
     if(!st.quickTimer){
       const delay=Math.min(30000,6000*st.fails);
@@ -1136,27 +1142,30 @@ function pulse(force){
     if(!st||!st.started||st.loading) return;
     if(!force){
       if(cfg.static||!(cfg.refresh>0)) return;
-      // refresh every N pulses (N=refresh/30), grid-aligned so a moveend that
-      // reset the countdown can't push a layer's refresh past a whole cycle
+      // refresh every N pulses (N = refresh/REFRESH_S), grid-aligned so a moveend
+      // that reset the countdown can't push a layer's refresh past a whole cycle
       const everyN=Math.max(1,Math.round(cfg.refresh/REFRESH_S));
       if(pulseCount%everyN!==0) return;
+      // a FAILING feed backs off (6→30 s by consecutive fails) instead of being
+      // re-hammered with a full 3-attempt retry burst on every pulse — the
+      // quickTimer set at failure time owns the retry until the feed recovers
+      if(st.fails && Date.now()-(st.failAt||0)<Math.min(30000,6000*st.fails)) return;
     }
     runLayer(cfg);
   });
-  // The canifly chart rides the SAME pulse: weather + the radar-echo sample every
-  // pulse; Kp throttles itself to the 180s space-weather cadence and the FAA
-  // airspace to its location/range-keyed cache — all inside flyRefresh().
-  // loadWeather self-throttles (~5 min / >2 km moves) unless forced.
+  // The canifly chart rides the SAME pulse, but each of its inputs keeps its own
+  // natural cadence inside flyRefresh(): winds-aloft via ALOFT_TTL_MS, the radar
+  // sample via the RADAR_BUST_S memo window, Kp on the ~3 min space-weather
+  // cadence, FAA airspace via its location-keyed cache. loadWeather self-throttles
+  // (~5 min / >2 km moves) unless forced.
   flyRefresh(); loadWeather(force); refreshRadar();
   refreshBase=Date.now();   // the refresh dials refill from here (updateLoadRing)
 }
 function forceRefresh(){ pulse(true); }   // tapping a refresh dial / the DATA card
 // fires the pulse at the end of each cycle; the dial fill is painted by updateLoadRing
 function refreshTick(){ if(Date.now()-refreshBase>=REFRESH_S*1000) pulse(); }
-// both refresh dials (SITREP header + iPhone-portrait map) force a refresh on tap
-(function bindRefreshDials(){
-  document.querySelectorAll('.rdial').forEach(b=>b.addEventListener('click',forceRefresh));
-})();
+// the map-corner refresh dial forces a refresh on tap
+$('#map-refresh').addEventListener('click',forceRefresh);
 
 // No layer selector: every layer's map source + style is created here and stays
 // on (SPC is defaultOff = hidden, loaded only to feed the SITREP outlook card).
@@ -1250,7 +1259,7 @@ function wxCard(wxState, wn){
       if(wn.precip){ ic='⛈️'; head='PRECIPITATION'; sub='radar echo in range'; }
       else if(wn.gust){ ic='💨'; head='HIGH WIND'; sub='gust '+Math.round(wn.gustMph)+U(' mph')+' · max '+LIM.wind; }
       else if(wn.windCeilFt<0){ ic='💨'; head='HIGH WIND'; sub=Math.round(wn.windPeakMph)+U(' mph')+' aloft · max '+LIM.wind; }
-      else if(wn.vis){ ic='🌫️'; head='LOW VISIBILITY'; sub=(wn.visSM!=null?wn.visSM.toFixed(1):'—')+U(' SM')+' · under 3 min'; }
+      else if(wn.vis){ ic='🌫️'; head='LOW VISIBILITY'; sub=(wn.visSM!=null?wn.visSM.toFixed(1):'—')+U(' SM')+' · min 3'+U(' SM'); }
       else { ic='☁️'; head='LOW CLOUD'; sub='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr'; }
       return {pin:true, card:['danger',ic,head,sub,condLine(),'',true]};
     }
@@ -1339,12 +1348,18 @@ function onGeoFix(lat,lon,acc){
   }
   setUserFix(_emaLat,_emaLon,'gps',null);
 }
+// The IP guess frames the map ONLY as a fallback: when GPS is denied/unavailable
+// (known immediately via the watch error → no waiting out the timer), or when no
+// GPS ping has landed by GEO_IP_FALLBACK_MS.
+let _geoFailed=false;
+function ipFallbackNow(){
+  if(!_geoDone && USER.lat==null && _ipFix) setUserFix(_ipFix.lat,_ipFix.lon,'ip',_ipFix.meta);
+}
+let _ipTimer=null;
 async function locate(){
   startGeoWatch();   // pings start now; the settled fix commits 3 s after the first
-  // The IP lookup runs in parallel but is FALLBACK ONLY — it never frames the map
-  // while GPS is alive (no more locking onto a centroid hundreds of miles off).
-  setTimeout(()=>{ if(!_geoDone && USER.lat==null && _ipFix)
-    setUserFix(_ipFix.lat,_ipFix.lon,'ip',_ipFix.meta); },GEO_IP_FALLBACK_MS);
+  if(!_ipTimer) _ipTimer=setTimeout(ipFallbackNow,GEO_IP_FALLBACK_MS);
+  if(_ipFix) return;   // IP already looked up (a retry only needs the watch kick)
   try{
     const j=await getJSON('https://ipwho.is/',{timeout:9000});
     if(j&&j.success!==false&&j.latitude!=null){
@@ -1352,17 +1367,20 @@ async function locate(){
         meta:{place:j.city,region:j.region,rc:j.region_code,cc:j.country_code,
           tz:(j.timezone&&j.timezone.id)||''}};
       if(_ipFix.meta.tz&&!USER.tz) USER.tz=_ipFix.meta.tz;   // tz is safe to take early
+      if(_geoFailed) ipFallbackNow();   // GPS already refused → don't wait out the timer
     }
   }catch(e){ console.warn('[ip-locate]',e.message); }
 }
 let geoWatchId=null;
 function startGeoWatch(){
-  if(geoWatchId!=null||!navigator.geolocation) return;
+  if(geoWatchId!=null) return;
+  if(!navigator.geolocation){ _geoFailed=true; ipFallbackNow(); return; }
   try{
     geoWatchId=navigator.geolocation.watchPosition(
       pos=>onGeoFix(pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy),
-      ()=>{},{enableHighAccuracy:true,timeout:10000,maximumAge:5000});
-  }catch(e){}
+      err=>{ if(err&&err.code===1){ _geoFailed=true; ipFallbackNow(); } },   // PERMISSION_DENIED
+      {enableHighAccuracy:true,timeout:10000,maximumAge:5000});
+  }catch(e){ _geoFailed=true; ipFallbackNow(); }
 }
 // The ⌖ / lock icons. The location icon = the framed crosshair; the lock icon =
 // a padlock (shown while FOLLOW-locked). Both use currentColor (white, inverting
@@ -1385,11 +1403,17 @@ function setLocIcon(locked){
 // Start LOCKED at 2: load auto-locates and frames on you; the first tap UNLOCKS,
 // the next RESETS + re-locks, and so on.
 let locMode=2;
-// LOCKED = a FROZEN map HELD ON YOUR LOCATION: every user camera handler (pan, zoom,
-// rotate, pitch) is disabled, so nothing you do moves the view. Unlock to pan or zoom.
-// Programmatic camera moves (our framing animations) still work.
+// LOCKED = every user camera input is dead; the map moves only when the location
+// moves. The lock has TWO enforcement points that must stay in sync:
+//  • here — the MapLibre handlers that are actually LIVE in this app: dragPan
+//    (desktop fine-pointer only; on touch the custom pointer nav owns panning),
+//    boxZoom and keyboard. scrollZoom / doubleClickZoom / touchZoomRotate /
+//    touchPitch / dragRotate are PERMANENTLY disabled by design (replaced by the
+//    centre-anchored custom zoom) and must NEVER be re-enabled on unlock;
+//  • the custom wheel / double-click / pan / pinch handlers, which check
+//    camLocked() themselves (see centerZoom).
 function setPanLock(on){
-  ['dragPan','scrollZoom','boxZoom','doubleClickZoom','touchZoomRotate','dragRotate','touchPitch','keyboard']
+  (COARSE?['boxZoom','keyboard']:['dragPan','boxZoom','keyboard'])
     .forEach(k=>{ try{ on?gl[k].disable():gl[k].enable(); }catch(e){} });
 }
 // ---- FRAMING + LOCKED FOLLOW --------------------------------------------------
@@ -1990,7 +2014,7 @@ function refreshViewport(){
     // ON your fix. A stray gesture that momentarily drags the frozen map (before the
     // snap-back) lands OFF the fix → no fetch for that wrong spot; the frame settling
     // onto you IS on the fix → fetches. Once loaded, the ~1km-rounded view key below
-    // dedupes repeats and the 15 s pulse keeps data current. UNLOCKED pans always
+    // dedupes repeats and the refresh pulse keeps data current. UNLOCKED pans always
     // refetch for the new area.
     if(locMode===2){
       if(USER.lat==null) return;   // still locating — the boot fallback covers a no-fix load
@@ -2536,15 +2560,17 @@ function flyRender(){
 }
 function flyPaint(){ FLY.detail=FLY.data?flyComputeDetail():null; flyRender(); }
 
-// ---- refresh — called from the unified refresh pulse, on viewport moves, on range
-// changes and at boot. Weather + the radar sample go every call; Kp re-fetches on
-// the 180s space-weather cadence; airspace via its cache. SINGLE-FLIGHT: while a
-// refresh is in the air new calls just flag a trailing re-run (which then reads
-// the fresh centre/range) — so a pan burst or a pulse landing mid-fetch can never
-// stack concurrent hits on the rate-limited FAA service. A failed weather pull
-// keeps the stale grid, never wipes. ----
-let flyBusy=false, flyAgain=false, flyKpAt=0;
+// ---- refresh — called from the unified refresh pulse, on viewport moves and at
+// boot. Every input keeps its own cadence: winds-aloft re-fetches only past
+// ALOFT_TTL_MS (or a real move), the radar sample memoises per RADAR_BUST_S
+// window, Kp rides the ~3 min space-weather cadence, airspace its cache.
+// SINGLE-FLIGHT: while a refresh is in the air new calls just flag a trailing
+// re-run (which then reads the fresh centre) — so a pan burst or a pulse landing
+// mid-fetch can never stack concurrent hits on the rate-limited FAA service. A
+// failed weather pull keeps the stale grid, never wipes. ----
+let flyBusy=false, flyAgain=false, flyKpAt=0, flyAloftAt=0;
 const KP_STALE_MS=15*60*1000;   // a transient SWPC blip may not wipe a recent Kp
+const ALOFT_TTL_MS=15000;       // winds-aloft is an hourly model — 15 s is already generous
 async function flyRefresh(){
   if(flyBusy){ flyAgain=true; return; }
   flyBusy=true;
@@ -2558,11 +2584,15 @@ async function flyRefresh(){
     const age=cc!=null?Date.now()-cc.ts:Infinity;
     const fresh=matches&&age<ASP_TTL;
     const kpKeep=FLY.data!=null&&FLY.data.kp!=null&&Date.now()-flyKpAt<170000;
-    // Fire all four in parallel, but DON'T let the slow FAA airspace query block
+    // winds-aloft: reuse the in-hand columns while they're fresh for this spot —
+    // the 5 s pulse then costs nothing between real fetches
+    const aloftKeep=FLY.data!=null&&FLY.data.aloft!=null&&Date.now()-flyAloftAt<ALOFT_TTL_MS
+      &&havKm(FLY.data.lat,FLY.data.lon,base.lat,base.lon)<ASP_TOL_KM;
+    // Fire all inputs in parallel, but DON'T let the slow FAA airspace query block
     // the chart: await weather FIRST and paint immediately (reusing the last-good
     // gates), then fold in airspace / Kp / radar as each lands. Airspace is a
     // single attempt (it's cached 6 h + fail-open) so it can never hang the grid.
-    const pAloft = retry(()=>getAloft(base.lat,base.lon),2).catch(()=>null);
+    const pAloft = aloftKeep?Promise.resolve(FLY.data.aloft):retry(()=>getAloft(base.lat,base.lon),2).catch(()=>null);
     const pKp    = kpKeep?Promise.resolve(FLY.data.kp):retry(()=>getKp(),2).catch(()=>null);
     const pAsp   = fresh?Promise.resolve({ceilFt:cc.ceilFt}):getAirspace(base.lat,base.lon,rngMi).catch(()=>null);
     // Two radar samples: the RED ring (1 mi) grounds NOW; the GREY ring (5 mi) is the
@@ -2585,6 +2615,7 @@ async function flyRefresh(){
     }
 
     const [kpRaw,aspRaw,precip,precipGrey]=await Promise.all([pKp,pAsp,pPrecip,pPrecipGrey]);
+    if(!aloftKeep&&aloft!=null) flyAloftAt=Date.now();   // a genuinely fresh aloft pull resets its clock
     if(!kpKeep&&kpRaw!=null) flyKpAt=Date.now();   // a genuinely fresh Kp resets its clock
     // Kp fetch failed: fall back to the recent last-good value rather than losing
     // the gate to one blip; beyond KP_STALE_MS stay null and amber (unknown ≠ calm).
@@ -2630,7 +2661,7 @@ function flyOnMove(){
 function updateLoadRing(){
   const busy = flyBusy || wxBusy || LAYERS.some(cfg=>{ const st=LAYER_STATE[cfg.id]; return st&&st.loading; });
   const deg = (Math.min(1,(Date.now()-refreshBase)/(REFRESH_S*1000))*360).toFixed(0)+'deg';
-  document.querySelectorAll('.rdial').forEach(d=>{ d.classList.toggle('busy',busy); d.style.setProperty('--rp',deg); });
+  const d=$('#map-refresh'); if(d){ d.classList.toggle('busy',busy); d.style.setProperty('--rp',deg); }
 }
 
 /* =====================================================================
