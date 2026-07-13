@@ -325,16 +325,18 @@ async function adsb(path){
 // already on the map + retries) — never a "zero" wipe.
 const KM_TO_NM=0.539957, ADSB_MAX_NM=100;
 function adsbRadiusNm(){
-  const b=gl.getBounds();
-  const diagKm=havKm(b.getSouth(),b.getWest(),b.getNorth(),b.getEast());
-  return Math.min(ADSB_MAX_NM,Math.max(15,Math.ceil(diagKm/2*KM_TO_NM*1.15)));
+  // Fixed radius keyed to the single on-screen distance (SCREEN_MI) with a margin so
+  // the map icons still populate the corners of a wide view — independent of screen
+  // size (the map is locked, so there's no zoom to grow it). The SITREP itself cards
+  // only contacts within SCREEN_MI of you. Floor 15 nm always covers the 5 mi net.
+  return Math.min(ADSB_MAX_NM,Math.max(15,Math.ceil(SCREEN_MI*MI_TO_KM*KM_TO_NM*2)));
 }
 async function adsbViewport(){
-  // Centre the query on the VIEW's geometric centre (not the padding-offset map centre),
-  // with the half-diagonal radius above, so the circle covers the whole visible view
-  // symmetrically — the same centring the precip view-sample uses. The SITREP still
-  // measures each contact's distance from YOU; this just fetches the on-screen superset.
-  const c=gl.getBounds().getCenter();
+  // Centre the query on YOU (the locked fix), not the panel-offset canvas centre, so
+  // the fetched set is symmetric about your position and never biased toward the panel.
+  // Pre-fix (no location yet) falls back to the current map centre. The SITREP measures
+  // each contact's distance from you and cards only those within SCREEN_MI.
+  const c = USER.lat!=null ? {lat:USER.lat,lng:USER.lon} : gl.getCenter();
   const j=await adsb('/point/'+c.lat.toFixed(3)+'/'+c.lng.toFixed(3)+'/'+adsbRadiusNm());
   return {ac:j.ac||[]};
 }
@@ -888,7 +890,7 @@ async function runLayer(cfg){
   // one. The latest request always wins. st.loading lets the master scheduler
   // skip a layer that's still fetching.
   const myGen=++st.gen;
-  st.loading=true;
+  st.loading=true; st.loadStart=Date.now();
   try{
     if(st.quickTimer){ clearTimeout(st.quickTimer); st.quickTimer=null; }
     // up to 3 attempts with exponential backoff before giving up this cycle
@@ -937,12 +939,19 @@ async function runLayer(cfg){
 //      refresh cadence (airspace, NPS) don't ride the scheduled pulse — they
 //      refetch when the map recenters on your new location (see refreshViewport).
 //      Layers already mid-flight are skipped (st.loading). ----
+// A load in flight normally blocks the next pulse from re-kicking the same layer
+// (st.loading). But a stuck/slow mirror could hold that flag through the whole
+// 3-attempt retry chain (tens of seconds), freezing the aircraft mid-air. Once a
+// load has run longer than this, a pulse is allowed to start a FRESH attempt — the
+// generation token drops the stale one, so a hung fetch can never freeze a layer.
+const LOAD_STALL_MS=15000;   // ~ one full two-host ADS-B timeout; a healthy load is a second or two
 let refreshBase=Date.now(), pulseCount=0;
 function pulse(force){
   if(!force) pulseCount++;   // forced pulls don't shift the slow-layer cadence grid
   LAYERS.forEach(cfg=>{
     const st=LAYER_STATE[cfg.id];
-    if(!st||!st.started||st.loading) return;
+    if(!st||!st.started) return;
+    if(st.loading && Date.now()-(st.loadStart||0)<LOAD_STALL_MS) return;   // fetching, not yet stalled
     if(!force){
       if(!(cfg.refresh>0)) return;
       // refresh every N pulses (N = refresh/REFRESH_S), grid-aligned so a moveend
@@ -971,7 +980,7 @@ function refreshTick(){ if(Date.now()-refreshBase>=REFRESH_S*1000) pulse(); }
 function initLayers(){
   LAYERS.forEach(cfg=>{
     LAYER_STATE[cfg.id]={features:[],started:false,
-      gen:0,quickTimer:null,fails:0,loading:false};
+      gen:0,quickTimer:null,fails:0,loading:false,loadStart:0};
     ensureMapLayer(cfg);
   });
 }
@@ -1061,11 +1070,11 @@ function wxCard(wxState, wn){
       else { ic='☁️'; head='LOW CLOUD'; sub='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr'; }
       return {pin:true, card:['danger',ic,head,sub,condLine(),true]};
     }
-    // PRECIP NEARBY: an echo anywhere on the visible map but not yet in the 5 mi
-    // grounding ring — a storm in view. Promote the card to amber ("land now") above a
-    // mere reduced ceiling; red precip in range (above) already outranks it.
+    // PRECIP NEARBY: an echo within the on-screen radius (SCREEN_MI) but not yet in the
+    // 5 mi grounding ring — a storm approaching. Promote the card to amber ("land now")
+    // above a mere reduced ceiling; red precip in range (above) already outranks it.
     if(wn.precipInbound){
-      return {pin:true, card:['alert','🌧️','PRECIP NEARBY','radar echo on screen',condLine(),true]};
+      return {pin:true, card:['alert','🌧️','PRECIP NEARBY','radar echo within '+SCREEN_MI+U(' mi'),condLine(),true]};
     }
     if(wxCap<SPEC.regFt){
       const wind=wn.windCeilFt<=wn.cloudCapFt;
@@ -1711,8 +1720,10 @@ function sitrepTick(){
   //    reordering can't touch it. No hazard tier, no flash: context, not in-range
   //    threats, so it never colours the title. Recognisable by icon + polygon/aircraft colour. --
   const ctxCards=[];
-  const bounds=gl.getBounds();
-  const inView=pt=>{ try{ return !!pt&&bounds.contains(pt); }catch(e){ return false; } };
+  // "On screen" is a fixed DISTANCE radius from you (SCREEN_MI), not the pixel
+  // viewport — so the context list is identical on a phone, a tablet and a desktop
+  // and never shifts with screen size or panel width.
+  const screenKm=SCREEN_MI*MI_TO_KM;
   const ctx=[];
   CATS.forEach(cfg=>{
     const ringRad=cfg.air?warnKm:rangeKm;
@@ -1724,7 +1735,7 @@ function sitrepTick(){
       else { const ne=nearestEdge(f,lon,lat); if(!ne) return;
         pt=ne.pt; km=pointInFeature(f,lon,lat)?0:ne.km; }
       if(km<=ringRad) return;   // already shown as an in-ring card above
-      if(!inView(pt)) return;   // not on screen
+      if(km>screenKm) return;   // beyond the on-screen radius → not shown
       ctx.push({cfg,f,pt,km});
     });
   });
@@ -1904,6 +1915,13 @@ const LIM={wind:27};
 // heads-up out to here) AND the PCPN radar-echo grounding radius. VIEW = 10 mi (2×
 // bubble): the load / reset framing radius AND the tightest allowed zoom.
 const RED_MI=1, GREY_MI=5, VIEW_MI=10;
+// SINGLE on-screen distance (miles). What counts as "on screen" for the SITREP —
+// the precip "on screen" amber, the aircraft/airspace context cards, and the
+// aircraft fetch — is this ONE fixed radius around YOU, not the pixel viewport.
+// A distance radius (vs the visible rectangle) means the same planes and precip
+// surface on a phone, a tablet and a wide desktop: the SITREP never changes with
+// screen size or panel width. Tied to the framed view range (VIEW_MI) by default.
+const SCREEN_MI=VIEW_MI;
 const RNG={mi:RED_MI};
 // Altitude ladder, 50 ft steps through the FAA band (matches the grid rows).
 const ALTS_UP=(()=>{const a=[];for(let f=0;f<=SPEC.regFt;f+=50)a.push(f);return a;})();
@@ -2127,7 +2145,7 @@ const FLY={
   data:null,     // last good {lat,lon,aloft,kp,asp} — lat/lon = where it was fetched
   detail:null,   // computed render model (kept for tests/debug)
   precip:null,   // radar echo within the GREY ring (5 mi)? true/false/null → grounds NOW
-  precipInbound:null,   // radar echo anywhere on the visible map but NOT the 5 mi ring → amber "nearby"
+  precipInbound:null,   // radar echo within the on-screen radius (SCREEN_MI) but NOT the 5 mi ring → amber "nearby"
   err:{om:false,kp:false,asp:false,radar:false},
 };
 // Gate inputs currently UNKNOWN (fetch failed / stale beyond fallback). Every
@@ -2384,15 +2402,12 @@ async function flyRefresh(){
     const pAloft = aloftKeep?Promise.resolve(FLY.data.aloft):retry(()=>getAloft(base.lat,base.lon),2).catch(()=>null);
     const pKp    = kpKeep?Promise.resolve(FLY.data.kp):retry(()=>getKp(),2).catch(()=>null);
     const pAsp   = fresh?Promise.resolve({ceilFt:cc.ceilFt}):getAirspace(base.lat,base.lon,rngMi).catch(()=>null);
-    // Two radar samples: the GREY ring (5 mi, centred on YOU) grounds NOW; the whole
-    // VISIBLE MAP VIEW is the amber "precip on screen" heads-up (any echo you can see,
-    // not yet in the grounding ring). The view sample is centred on the view's geometric
-    // centre and reaches its furthest corner (half-diagonal), so the circle covers the
-    // whole visible rectangle; floored at the grey ring so it's never smaller.
-    const _b=gl.getBounds(), _bc=_b.getCenter();
-    const scrMi=Math.max(GREY_MI, havKm(_bc.lat,_bc.lng,_b.getNorth(),_b.getEast())/MI_TO_KM);
+    // Two radar samples, BOTH centred on YOU: the GREY ring (5 mi) grounds NOW; the
+    // wider on-screen radius (SCREEN_MI) is the amber "precip on screen" heads-up (an
+    // echo within the on-screen distance, not yet in the grounding ring). A fixed
+    // distance — not the pixel viewport — so the amber never depends on screen size.
     const pPrecip= retry(()=>sampleRadarPrecip(base.lat,base.lon,GREY_MI),2).catch(()=>null);
-    const pPrecipScreen= retry(()=>sampleRadarPrecip(_bc.lat,_bc.lng,scrMi),2).catch(()=>null);
+    const pPrecipScreen= retry(()=>sampleRadarPrecip(base.lat,base.lon,SCREEN_MI),2).catch(()=>null);
 
     const aloft=await pAloft;
     if(aloft){
@@ -2421,7 +2436,7 @@ async function flyRefresh(){
     // beyond that stay null and amber (unknown ≠ clear)
     else if(matches&&age<ASP_HARD_TTL) asp={ceilFt:cc.ceilFt};
     FLY.precip=precip; FLY.err.radar=precip==null;
-    // on-screen = an echo anywhere in the visible view but NOT already in the red ring
+    // on-screen = an echo within SCREEN_MI of you but NOT already in the 5 mi grey ring
     // (which grounds) → the amber "precip on screen" heads-up
     FLY.precipInbound = precipScreen===true && precip!==true;
     if(aloft){
