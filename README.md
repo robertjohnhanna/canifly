@@ -40,7 +40,7 @@ code in the cell where the limit bites:
 | KPx | planetary Kp ≥ 7 (G3, GPS degraded) grounds; Kp 5–6 (G1–G2) is an amber caution. NOW uses the finalized observed bin; +1/+2/+3h use the forecast | NOAA SWPC |
 | FAA | LAANC grid ceiling caps the band; a National-Defense TFR in range grounds | FAA ArcGIS (point + range buffer) |
 | PROH / NSUF / PARK | Prohibited area, security UAS zone, or NPS land under the crosshair grounds | FAA ArcGIS · NPS |
-| PCPN | NEXRAD echo inside the 1 mi red ring grounds NOW (an echo in the 5 mi grey ring instead ambers the weather card "precip inbound" without grounding) | Iowa State Mesonet mosaic (pixel-sampled) |
+| PCPN | NEXRAD echo inside the 1 mi red ring grounds NOW (an echo anywhere else on the visible map instead ambers the weather card "precip nearby" without grounding) | Iowa State Mesonet mosaic (pixel-sampled) |
 | TRFC | a low manned aircraft **inside the 1 mi range ring** caps the NOW column: the drone must stay 500 ft below it (§91.119 min altitude), so it flashes red/white at that ceiling and reds every row above. It's shown as its **own flashing marker** — so the traffic is always visible even when a lower or grounding gate (FAA / weather) also limits the column | ADS-B |
 
 **Fail-safe posture:** a feed that can't be verified never silently reads
@@ -142,10 +142,11 @@ screen is a mystery:
     the gate and the measured value; the **current conditions fold onto line 3**, so
     the sky/temp/wind show exactly once. It reads the chart's own NOW gates, so card
     and chart agree.
-  - a radar echo out in the **5 mi grey ring but not yet the red ring** promotes the
-    card to an amber **🌧️ PRECIP INBOUND** heads-up (a storm approaching — land now)
+  - a radar echo **anywhere on the visible map but not yet in the red ring** promotes
+    the card to an amber **🌧️ PRECIP NEARBY** heads-up (a storm in view — land now)
     without grounding the chart; the moment it reaches the red ring it becomes the
-    red PRECIPITATION ground above.
+    red PRECIPITATION ground above. The on-screen sample scales with the view, so it
+    covers exactly what you can see.
   - otherwise it's the routine **conditions card at the bottom** (temp, sky,
     wind, feels-like, hi/lo), which also carries feed health: **amber**
     ("stale") when the feed is failing but last-good conditions still show,

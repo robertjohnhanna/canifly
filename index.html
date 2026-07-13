@@ -1185,11 +1185,11 @@ function wxCard(wxState, wn){
       else { ic='☁️'; head='LOW CLOUD'; sub='base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft')+' · need 500 clr'; }
       return {pin:true, card:['danger',ic,head,sub,condLine(),'',true]};
     }
-    // PRECIP INBOUND: an echo in the grey ring (1–5 mi) but not yet grounding in the
-    // red ring — a storm approaching. Promote the card to amber ("land now") above a
-    // mere reduced ceiling; red precip overhead (above) already outranks it.
+    // PRECIP NEARBY: an echo anywhere on the visible map but not yet grounding in the
+    // red ring — a storm in view. Promote the card to amber ("land now") above a mere
+    // reduced ceiling; red precip overhead (above) already outranks it.
     if(wn.precipInbound){
-      return {pin:true, card:['alert','🌧️','PRECIP INBOUND','radar echo within '+GREY_MI+U(' mi'),condLine(),'',true]};
+      return {pin:true, card:['alert','🌧️','PRECIP NEARBY','radar echo on screen',condLine(),'',true]};
     }
     if(wxCap<SPEC.regFt){
       const wind=wn.windCeilFt<=wn.cloudCapFt;
@@ -2273,7 +2273,7 @@ const FLY={
   data:null,     // last good {lat,lon,aloft,kp,asp} — lat/lon = where it was fetched
   detail:null,   // computed render model (kept for tests/debug)
   precip:null,   // radar echo within the RED ring (1 mi)? true/false/null → grounds NOW
-  precipInbound:null,   // radar echo in the GREY ring (1–5 mi) but NOT the red ring → amber "inbound"
+  precipInbound:null,   // radar echo anywhere on the visible map but NOT the red ring → amber "nearby"
   err:{om:false,kp:false,asp:false,radar:false},
 };
 // Gate inputs currently UNKNOWN (fetch failed / stale beyond fallback). Every
@@ -2530,10 +2530,15 @@ async function flyRefresh(){
     const pAloft = aloftKeep?Promise.resolve(FLY.data.aloft):retry(()=>getAloft(base.lat,base.lon),2).catch(()=>null);
     const pKp    = kpKeep?Promise.resolve(FLY.data.kp):retry(()=>getKp(),2).catch(()=>null);
     const pAsp   = fresh?Promise.resolve({ceilFt:cc.ceilFt}):getAirspace(base.lat,base.lon,rngMi).catch(()=>null);
-    // Two radar samples: the RED ring (1 mi) grounds NOW; the GREY ring (5 mi) is the
-    // "precip inbound" heads-up (echo out there but not yet in the red ring).
+    // Two radar samples: the RED ring (1 mi, centred on YOU) grounds NOW; the whole
+    // VISIBLE MAP VIEW is the amber "precip on screen" heads-up (any echo you can see,
+    // not yet in the red ring). The view sample is centred on the view's geometric
+    // centre and reaches its furthest corner (half-diagonal), so the circle covers the
+    // whole visible rectangle; floored at the grey ring so it's never smaller.
+    const _b=gl.getBounds(), _bc=_b.getCenter();
+    const scrMi=Math.max(GREY_MI, havKm(_bc.lat,_bc.lng,_b.getNorth(),_b.getEast())/MI_TO_KM);
     const pPrecip= retry(()=>sampleRadarPrecip(base.lat,base.lon,RED_MI),2).catch(()=>null);
-    const pPrecipGrey= retry(()=>sampleRadarPrecip(base.lat,base.lon,GREY_MI),2).catch(()=>null);
+    const pPrecipScreen= retry(()=>sampleRadarPrecip(_bc.lat,_bc.lng,scrMi),2).catch(()=>null);
 
     const aloft=await pAloft;
     if(aloft){
@@ -2549,7 +2554,7 @@ async function flyRefresh(){
       FLY.err.om=true;   // weather pull failed — keep the stale grid; next pulse retries
     }
 
-    const [kpRaw,aspRaw,precip,precipGrey]=await Promise.all([pKp,pAsp,pPrecip,pPrecipGrey]);
+    const [kpRaw,aspRaw,precip,precipScreen]=await Promise.all([pKp,pAsp,pPrecip,pPrecipScreen]);
     if(!aloftKeep&&aloft!=null) flyAloftAt=Date.now();   // a genuinely fresh aloft pull resets its clock
     if(!kpKeep&&kpRaw!=null) flyKpAt=Date.now();   // a genuinely fresh Kp resets its clock
     // Kp fetch failed: fall back to the recent last-good value rather than losing
@@ -2562,8 +2567,9 @@ async function flyRefresh(){
     // beyond that stay null and amber (unknown ≠ clear)
     else if(matches&&age<ASP_HARD_TTL) asp={ceilFt:cc.ceilFt};
     FLY.precip=precip; FLY.err.radar=precip==null;
-    // inbound = echo in the grey ring but NOT already in the red ring (which grounds)
-    FLY.precipInbound = precipGrey===true && precip!==true;
+    // on-screen = an echo anywhere in the visible view but NOT already in the red ring
+    // (which grounds) → the amber "precip on screen" heads-up
+    FLY.precipInbound = precipScreen===true && precip!==true;
     if(aloft){
       FLY.data={lat:base.lat,lon:base.lon,aloft,kp,asp};
       FLY.err.om=false; FLY.err.asp=asp==null;
