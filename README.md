@@ -8,7 +8,7 @@ docked panel (on mobile, two full-screen pages — the map and the panel — tha
 between with a single tap). The panel leads with the
 **flyability chart** — can a small drone fly *here, now, and for the next three
 hours, and how high* — and a **SITREP** briefing: a stack of distance-sorted
-cards for everything inside the range ring — low manned traffic, FAA airspace
+cards for everything inside the operational range — low manned traffic, FAA airspace
 ceilings, NWS warnings, park no-fly land, severe-weather outlooks, space weather,
 and the local forecast.
 
@@ -40,8 +40,8 @@ code in the cell where the limit bites:
 | KPx | planetary Kp ≥ 7 (G3, GPS degraded) grounds; Kp 5–6 (G1–G2) is an amber caution. NOW uses the finalized observed bin; +1/+2/+3h use the forecast | NOAA SWPC |
 | FAA | LAANC grid ceiling caps the band; a National-Defense TFR in range grounds | FAA ArcGIS (point + range buffer) |
 | PROH / NSUF / PARK | Prohibited area, security UAS zone, or NPS land under the crosshair grounds | FAA ArcGIS · NPS |
-| PCPN | NEXRAD echo inside the 5 mi grey ring grounds NOW (an echo anywhere else on the visible map instead ambers the weather card "precip nearby" without grounding) | Iowa State Mesonet mosaic (pixel-sampled) |
-| TRFC | a low manned aircraft **inside the 1 mi range ring** caps the NOW column: the drone must stay 500 ft below it (§91.119 min altitude), so it flashes red/white at that ceiling and reds every row above. It's shown as its **own flashing marker** — so the traffic is always visible even when a lower or grounding gate (FAA / weather) also limits the column | ADS-B |
+| PCPN | NEXRAD echo inside the 5 mi operational bubble grounds NOW (an echo anywhere else on the visible map instead ambers the weather card "precip nearby" without grounding) | Iowa State Mesonet mosaic (pixel-sampled) |
+| TRFC | a low manned aircraft **inside the 1 mi operational range** caps the NOW column: the drone must stay 500 ft below it (§91.119 min altitude), so it flashes red/white at that ceiling and reds every row above. It's shown as its **own flashing marker** — so the traffic is always visible even when a lower or grounding gate (FAA / weather) also limits the column | ADS-B |
 
 **Fail-safe posture:** a feed that can't be verified never silently reads
 "clear". Unknown inputs fail *open* for the grid values but amber the NOW
@@ -58,12 +58,14 @@ verdict colour as the CANIFLY title — green clear, amber capped, red grounded.
 The three working radii are **fixed** (no settings to tune) and the max-wind
 limit is hardcoded to **27 mph**:
 
-- **RED · 1 mi** — the dashed **range ring** drawn around the crosshair. It's the
-  FAA query radius, the radar-echo sweep, the SITREP card radius, and the *red
-  flashing* low-aircraft alert zone.
-- **GREY · 5 mi** — the **dotted traffic ring**. Every plane inside it is tracked,
-  and a *low* one out here raises an **amber** low-aircraft heads-up (see LOW
-  AIRCRAFT below).
+- **OPERATIONAL RANGE · 1 mi** — the inner **dashed ring** at the map centre. It's
+  the FAA query radius, the SITREP card radius, and the *red flashing* low-aircraft
+  alert zone.
+- **OPERATIONAL BUBBLE · 5 mi** — the outer **dotted ring**. Every plane inside it is
+  tracked, a *low* one out here raises an **amber** low-aircraft heads-up (see LOW
+  AIRCRAFT below), and a radar echo inside it grounds NOW.
+
+Both rings are drawn **bold and bright** for visibility.
 
 **Both rings are tinted to the current verdict** — green clear, amber
 reduced/unverified, red grounded — so the one-glance colour reaches the map even
@@ -208,7 +210,7 @@ gate input.
 | Military aircraft (worldwide) | ADS-B `/mil` | 5 s |
 | Emergency squawks (worldwide) | ADS-B `/squawk` | 5 s |
 | NWS warning polygons (US) — red outline for Extreme/Severe, amber otherwise | api.weather.gov | 15 s |
-| NEXRAD reflectivity mosaic | Iowa State Mesonet | 60 s (source updates ~5 min) |
+| NEXRAD reflectivity mosaic — drawn as **raw pixels** (nearest-neighbour, no smoothing) | Iowa State Mesonet | 60 s (source updates ~5 min) |
 | SPC Day-1 outlook (hidden; feeds cards) | NOAA SPC | 15 min |
 | FAA airspace + restrictions — scoped to the **visible map**, refetched when the map recenters on your new location | FAA ArcGIS ×5 services | on move |
 | NPS lands — scoped to the **visible map**, same as airspace | NPS ArcGIS | on move |
@@ -232,13 +234,11 @@ The map has **no click popups** — everything inside the range ring is describe
 by the SITREP cards, so the map stays a clean picture and the panel carries the
 detail.
 
-**The panel has no header in any layout, and the map has no controls.** The map is
-always locked and centred on you — there's no pan, no zoom, and no buttons. The only
-on-map chrome is the **CANIFLY verdict tag** in the **top-left corner** (a black glyph
-outline so it reads over any map); it mirrors the same green/amber/red verdict +
-breach-flash the panel drives, so the one-glance go/no-go is always on the map. The
-panel itself is just the flyability chart + the SITREP cards. Data **auto-refreshes
-every 5 s** — no manual refresh control.
+**The panel has no header in any layout, and the map has no controls or title.** The
+map is always locked and centred on you — there's no pan, no zoom, and no buttons. The
+one-glance go/no-go reads off the **ring colour** (green/amber/red + breach-flash), so
+the map itself carries no text tag. The panel is just the flyability chart + the SITREP
+cards. Data **auto-refreshes every 5 s** — no manual refresh control.
 
 **Mobile portrait** (iPhone, and any ≤1000px-wide portrait screen) is a **two-page
 toggle**: the map and the panel are separate full-screen pages. **Tap the map** to

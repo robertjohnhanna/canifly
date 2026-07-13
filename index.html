@@ -21,16 +21,16 @@
      Layout: a full-map canvas with a single docked panel on the right
      (on iPhone portrait, a full-screen page toggled with the map). The
      panel has NO header: the flyability chart is its top section, then a
-     distance-sorted SITREP briefing of everything in the range ring — all
-     driven by the map-centre crosshair. The map is always locked and centred
-     on your location — no pan, no zoom, no controls. The CANIFLY verdict tag
-     sits in the map's top-left corner; data auto-refreshes every 5 s.
+     distance-sorted SITREP briefing of everything in the operational range — all
+     driven by the map centre. The map is always locked and centred on your
+     location — no pan, no zoom, no controls, no on-map title; data auto-refreshes
+     every 5 s and the verdict reads off the ring colour.
 
      Map layers (all keyless, CORS-*): live aircraft (adsb), NWS
      warnings, NEXRAD radar (Iowa State Mesonet), FAA airspace (Class
      B/C/D + special-use / prohibited / security / stadium restrictions),
-     National Park Service lands, plus the fixed 1 mi range ring + 5 mi
-     traffic ring at the crosshair. Card/chart-only feeds: SPC Day-1
+     National Park Service lands, plus the fixed 1 mi OPERATIONAL RANGE + 5 mi
+     OPERATIONAL BUBBLE at the map centre. Card/chart-only feeds: SPC Day-1
      outlook, NOAA SWPC space weather (Kp / GOES X-ray).
      All sources are keyless with ACAO:* so fetch works cross-origin;
      anything requiring a key is excluded by the keyless rule.
@@ -64,7 +64,7 @@
      area left of the docked SITREP panel. pointer-events:none so it never blocks
      the map; natural case + a low z so it reads as part of the basemap. */
   #map-attrib{position:absolute;z-index:3;bottom:3px;left:0;
-    right:calc(360px + var(--sa-r));text-align:center;pointer-events:none;
+    right:calc(320px + var(--sa-r));text-align:center;pointer-events:none;
     color:#000;opacity:.55;font-family:var(--mono);font-size:9px;letter-spacing:.2px;
     text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     padding:0 8px}
@@ -86,7 +86,7 @@
      clipped by the device's rounded screen corner (bottom-right) and look broken;
      the background simply meets the screen edge instead, which the rounded corner
      masks cleanly. */
-  #sitrep{top:0;right:0;left:auto;width:360px;bottom:0;
+  #sitrep{top:0;right:0;left:auto;width:320px;bottom:0;
     border-left:1px solid var(--line)}
   /* ---------- canifly — the static drone-preflight chart ----------
      The flyability grid, and nothing else — no title/coords/refresh line.
@@ -142,29 +142,17 @@
     padding:8px 11px;border-radius:8px;font-size:13px;color:var(--ink);animation:sl .25s ease}
   @keyframes sl{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
   /* ---------- SITREP briefing panel (right side) ----------
-     No header in any layout — the CANIFLY verdict lives on the map's corner, so the
-     panel is just the chart + cards. #sit-title is a hidden, empty
-     canonical-verdict element (the on-map #map-title mirrors it); sitrepTick stamps it. */
-  /* CANIFLY verdict tag at the map's TOP-left — the single visible title now the panel
-     header is gone, shown in EVERY layout. Same green/amber/red + breach-flash as the
-     (hidden) header title, which sitrepTick keeps it in sync with. A black glyph outline
-     (text-stroke, painted BEHIND the fill) keeps it legible over any map. Its colour
-     rules sit here, BEFORE the acflash rule, so the flash animation still wins. */
-  #map-title{position:absolute;z-index:16;left:14px;   /* flush top-left — the landscape
-    notch inset (--sa-l) is NOT added; it pushed the tag ~60px inward, leaving a gap */
-    top:calc(var(--sa-t) + 14px);display:block;pointer-events:none;
-    color:var(--accent);font-size:22px;letter-spacing:2px;font-weight:700;   /* a little bigger than the lock button */
-    -webkit-text-stroke:3px #000;paint-order:stroke fill;filter:drop-shadow(0 0 2px #000)}
-  #map-title.alert{color:var(--warn)}
-  #map-title.warn{color:var(--danger)}
-  /* EXTRA ALERT — an aircraft breaching the range+altitude threshold flashes the
-     CANIFLY tag, its card headline, its map halo AND the chart's TRFC cell(s)
-     between red and white (a TRFC cell only appears while a plane breaches). */
+     No header in any layout — the map has no title/tag. #sit-title is a hidden, empty
+     canonical-verdict element that sitrepTick stamps (kept for tests/parity); the
+     visible verdict reads off the map RINGS' colour. */
+  /* EXTRA ALERT — an aircraft breaching the range+altitude threshold flashes its card
+     headline, its map halo AND the chart's TRFC cell(s) between red and white (a TRFC
+     cell only appears while a plane breaches). */
   @keyframes acflash{0%,100%{color:var(--danger)}50%{color:#fff}}
-  #map-title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{
+  .sit-row.acflash .s1,#fly-pane .gc.acflash{
     animation:acflash .9s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){
-    #map-title.acflash,.sit-row.acflash .s1,#fly-pane .gc.acflash{animation:none}}
+    .sit-row.acflash .s1,#fly-pane .gc.acflash{animation:none}}
   #sit-body{display:flex;flex-direction:column;align-content:start;
     overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
   /* every SITREP row is a uniform 3-line info block: icon · three text lines.
@@ -237,16 +225,16 @@
      into the dark basemap, centred along the bottom of the visible map area -->
 <div id="map-attrib" aria-hidden="true">© OpenStreetMap · © CARTO · NEXRAD · Iowa State Mesonet</div>
 <!-- CANIFLY panel — desktop / tablet: docked right. iPhone portrait: a full-screen
-     page toggled with the map. There is NO header (the CANIFLY verdict lives on the
-     map's corner); the panel is just the flyability chart, then the SITREP cards
-     (scroll). -->
+     page toggled with the map. There is NO header and no on-map title; the verdict
+     reads off the ring colour. The panel is just the flyability chart, then the
+     SITREP cards (scroll). -->
 <div id="sitrep" class="panel">
-  <!-- Canonical verdict element: HIDDEN (the on-map #map-title mirrors it) and empty,
-       kept out of the visible layout so no "header" can flash before the render-blocking
-       CDN stylesheet loads. sitrepTick stamps its warn/alert/acflash class. -->
+  <!-- Canonical verdict element: HIDDEN and empty, kept out of the visible layout so no
+       "header" can flash before the render-blocking CDN stylesheet loads. sitrepTick
+       stamps its warn/alert/acflash class (kept for tests/parity). -->
   <span id="sit-title" hidden></span>
   <!-- canifly drone-preflight chart — the flyability grid, driven by the
-       map-centre crosshair on the same unified data-refresh pulse. -->
+       map centre on the same unified data-refresh pulse. -->
   <div id="fly-pane">
     <div id="fly-board" class="board" role="group" aria-label="Can I Fly? drone preflight"></div>
   </div>
@@ -254,12 +242,6 @@
     <div class="sit-empty">ACQUIRING POSITION…</div>
   </div>
 </div>
-
-<!-- CANIFLY verdict tag mirrored at the map's bottom-left — shown on an iPhone
-     (portrait's map page, and landscape where the header is dropped) so the
-     at-a-glance verdict colour is always reachable. sitrepTick keeps its
-     colour/flash in sync with the header title. -->
-<div id="map-title" aria-hidden="true">CANIFLY</div>
 
 <div id="toast"></div>
 
@@ -514,26 +496,25 @@ const gl = new maplibregl.Map({
                'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'] },
       // NEXRAD base-reflectivity mosaic (~1 km, latest) — Iowa State Mesonet,
       // keyless. refreshRadar() rides the refresh pulse (new tiles once per mosaic
-      // minute — see radarBust above). Sits above the
-      // basemap, below the aircraft/warning layers (added later). maxzoom caps
-      // the TILE fetch at the mosaic's native detail (~z8); it does NOT cap the
-      // map's zoom — you can still zoom all the way in, and beyond z8 MapLibre
-      // bilinearly upsamples that tile so the radar stays smooth instead of
-      // showing the blocky server-upscaled tiles you'd get by fetching deeper.
+      // minute — see radarBust above). Sits above the basemap, below the
+      // aircraft/warning layers (added later). maxzoom caps the TILE fetch at the
+      // mosaic's native detail (~z8); it does NOT cap the map's zoom.
       radar:{ type:'raster', tileSize:256, maxzoom:8,
         tiles:[RADAR_TILE] }
     },
+    // raster-resampling:'nearest' → NO smoothing: the raw NEXRAD pixels are drawn as
+    // hard blocks (nearest-neighbour), never bilinearly interpolated.
     layers:[{id:'carto',type:'raster',source:'carto'},
       {id:'radar',type:'raster',source:'radar',
-        paint:{'raster-opacity':0.5,'raster-resampling':'linear'}}]
+        paint:{'raster-opacity':0.5,'raster-resampling':'nearest'}}]
   },
   center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a location fix lands
   renderWorldCopies:true, attributionControl:false
 });
 // Apply the panel padding IMMEDIATELY (before the first render), so the very first
-// view is already framed into the open map area left of the docked 360px panel, not
+// view is already framed into the open map area left of the docked 320px panel, not
 // centred under it. setMapPadding() on load keeps it in sync on resize/orientation.
-gl.setPadding(MQ_MOBILE.matches?{top:0,right:0,bottom:0,left:0}:{top:20,left:24,right:376,bottom:24});
+gl.setPadding(MQ_MOBILE.matches?{top:0,right:0,bottom:0,left:0}:{top:20,left:24,right:336,bottom:24});
 // No on-map controls — the map is locked and centred on your location.
 window.__sitrep={map:gl}; // debug/test handle
 
@@ -1406,11 +1387,11 @@ gl.on('moveend',e=>{
 // docked SITREP panel (desktop only; on mobile the panel is an overlay sheet).
 let _pad=null;
 function setMapPadding(){
-  // the SITREP panel is docked right (360px) — keep map content centred in the
+  // the SITREP panel is docked right (320px) — keep map content centred in the
   // area to its left; on mobile the panel is an overlay sheet so no padding.
   const p=MQ_MOBILE.matches
     ? {top:0,right:0,bottom:0,left:0}
-    : {top:20,left:24,right:376,bottom:24};
+    : {top:20,left:24,right:336,bottom:24};
   if(_pad&&_pad.top===p.top&&_pad.left===p.left&&_pad.right===p.right&&_pad.bottom===p.bottom) return;
   _pad=p; gl.setPadding(p);   // only when it actually changed — avoids needless camera nudges
 }
@@ -1906,18 +1887,17 @@ function sitrepTick(){
   if(g0) titleSev=g0.grounded?2:(g0.maxFly<SPEC.regFt?1:0);
   if(FLY.detail&&flyUnknown().length) titleSev=Math.max(titleSev,1);
   cards.forEach(cd=>{ if(cd[6]) titleSev=Math.max(titleSev,cd[0]==='danger'?2:cd[0]==='alert'?1:0); });
-  // The CANIFLY title takes the verdict colour + breach-flash — applied to BOTH the
-  // header title and the map-page tag (bottom-left, iPhone portrait) so the at-a-
-  // glance verdict reads the same on either page.
-  [$('#sit-title'),$('#map-title')].forEach(t=>{ if(!t) return;
+  // The verdict is stamped on the hidden canonical #sit-title (kept for tests/parity);
+  // the visible verdict reads off the map RINGS' colour (set below).
+  { const t=$('#sit-title'); if(t){
     t.classList.remove('warn','alert');
     if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
-    t.classList.toggle('acflash',acFlash);   // breaching aircraft → flash red/white
-  });
-  // BOTH map rings track the SITREP title severity: green clear / amber reduced-or-
-  // unverified / red grounded (same 0·1·2 the title colour uses). The inner range ring
-  // and the outer grey traffic ring share the verdict colour; they stay distinguishable
-  // by dash pattern (inner dashed, outer dotted).
+    t.classList.toggle('acflash',acFlash);
+  }}
+  // BOTH map rings track the verdict severity: green clear / amber reduced-or-unverified
+  // / red grounded. The inner OPERATIONAL RANGE ring and the outer OPERATIONAL BUBBLE
+  // share the verdict colour; they stay distinguishable by dash pattern (inner dashed,
+  // outer dotted).
   const sevCol=SEV_COL[titleSev]||SEV_COL[0];
   if(gl.getLayer('ly-ring')) gl.setPaintProperty('ly-ring','line-color',sevCol);
   if(gl.getLayer('ly-warnring')) gl.setPaintProperty('ly-warnring','line-color',sevCol);
@@ -2046,11 +2026,11 @@ const WARN_AGL_FT=SPEC.regFt+FAA_SEP_FT;   // 400 + 500 = 900
 // LIM.wind = the aircraft's max wind [mph] — gates the surface gust and caps the
 // wind-aloft scan. FIXED at 27 mph (no setting).
 const LIM={wind:27};
-// The three FIXED radii [statute miles]. RED (the range ring, RNG.mi) = 1 mi VLOS:
-// the FAA query radius, the RED low-aircraft alert, the TRFC chart cap + the PCPN
-// radar-echo radius. GREY = 5 mi: the traffic net (planes tracked + amber low-
-// aircraft heads-up out to here). VIEW = 10 mi (2× grey): the load / reset framing
-// radius AND the tightest allowed zoom (the view never shows less than this).
+// The three FIXED radii [statute miles]. RED = the OPERATIONAL RANGE (RNG.mi) = 1 mi
+// VLOS: the FAA query radius, the RED low-aircraft alert + the TRFC chart cap. GREY =
+// the OPERATIONAL BUBBLE = 5 mi: the traffic net (planes tracked + amber low-aircraft
+// heads-up out to here) AND the PCPN radar-echo grounding radius. VIEW = 10 mi (2×
+// bubble): the load / reset framing radius AND the tightest allowed zoom.
 const RED_MI=1, GREY_MI=5, VIEW_MI=10;
 const RNG={mi:RED_MI};
 // Altitude ladder, 50 ft steps through the FAA band (matches the grid rows).
@@ -2705,18 +2685,18 @@ gl.on('load',()=>{
     paint:{'circle-radius':14,'circle-color':SEV_COL[2],'circle-opacity':0.4,
       'circle-stroke-color':'#ffffff','circle-stroke-width':1.5,'circle-stroke-opacity':0.9}});
   if(gl.getLayer('ly-nearair')) gl.moveLayer('ly-acalert','ly-nearair');
-  // LOW-AIRCRAFT traffic ring — a light-grey DOTTED circle at the 5 mi grey
-  // radius (GREY_MI), marking how far out manned traffic is tracked + the amber
-  // low-aircraft heads-up reaches. Added before the green ring so it reads under it.
+  // OPERATIONAL BUBBLE — the outer DOTTED circle at the 5 mi radius (GREY_MI),
+  // marking how far out manned traffic is tracked + the amber low-aircraft heads-up
+  // reaches. Added before the inner ring so it reads under it.
   gl.addSource('src-warnring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   gl.addLayer({id:'ly-warnring',type:'line',source:'src-warnring',
     layout:{'line-cap':'round'},
-    paint:{'line-color':SEV_COL[0],'line-width':1.4,'line-opacity':0.55,'line-dasharray':[0,2.6]}});
-  // range ring — a dashed accent circle at the map centre at RNG.mi, added
-  // last so it sits on top of the map layers
+    paint:{'line-color':SEV_COL[0],'line-width':2.4,'line-opacity':0.85,'line-dasharray':[0,3]}});
+  // OPERATIONAL RANGE — the inner DASHED circle at the map centre at RNG.mi (1 mi),
+  // added last so it sits on top of the map layers.
   gl.addSource('src-ring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   gl.addLayer({id:'ly-ring',type:'line',source:'src-ring',
-    paint:{'line-color':SEV_COL[0],'line-width':1.5,'line-opacity':0.72,'line-dasharray':[2,2]}});
+    paint:{'line-color':SEV_COL[0],'line-width':2.6,'line-opacity':0.95,'line-dasharray':[2,1.8]}});
   updateRing();
   enforceRingZoom();   // establish the initial ring-≤-1/3 max-zoom cap
   // Pull the location-INDEPENDENT feeds once on load, before any fix (mil/sos small
