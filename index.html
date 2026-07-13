@@ -1054,6 +1054,10 @@ function frameNow(lat,lon){
     _framing=false;
     const z=viewZoom(gl.getCenter().lat);
     if(Math.abs(gl.getZoom()-z)>0.01) gl.setZoom(z);
+    // a fix that arrived DURING the fly-in was ignored (lockFollow no-ops while _framing);
+    // now that we've settled, re-check and follow it right away instead of waiting for the
+    // next GPS ping — converges (a stable fix leaves lockFollow a no-op).
+    lockFollow();
   },1300);
 }
 function lockFollow(){
