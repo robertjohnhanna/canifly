@@ -11,98 +11,90 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9B%A9%3C/text%3E%3C/svg%3E">
 <title>canifly</title>
 
-<!-- canifly — self-contained drone-preflight map. One HTML file: no backend,
-     build, keys or npm. Vanilla JS + MapLibre GL (CDN). Locked map centred on you
-     (no pan/zoom/controls); a docked panel (full-screen page on iPhone portrait)
-     carries the flyability chart + a distance-sorted SITREP. Data refreshes every
-     5 s; the verdict reads off the ring colour. All feeds keyless + CORS-*. -->
-
-<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<!-- canifly — self-contained drone-preflight brief. One HTML file: no backend,
+     build step, API keys, npm, or map library. Vanilla JS only. Located by GPS;
+     a full-screen card interface carries the flyability chart (with a verdict
+     clock in its top-left corner) above a distance-sorted SITREP of nearby
+     aircraft, airspace and hazards. Data refreshes every 5 s; the overall verdict
+     reads off the clock colour (green = go, yellow = caution, red = no-go). Every
+     data feed is keyless and CORS-open. -->
 
 <style>
   :root{
-    --bg:#000000; --panel:#000000f5; --line:#1a2730;
-    --ink:#d6e2ee; --ink-dim:#748596; --accent:#2fe07a;
-    --danger:#ff4455; --warn:#ffb454; --ok:#2fe07a;
+    --bg:#000000; --line:#1a2730;
+    --ink:#d6e2ee; --ink-dim:#748596;
+    /* the three verdict colours — go / caution / no-go — used everywhere a
+       severity is shown (clock, chart cells, card text). Caution is YELLOW. */
+    --go:#2fe07a; --caution:#ffd43b; --nogo:#ff4455;
     --mono:"SF Mono",ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
-    --sa-t:env(safe-area-inset-top,0px); --sa-b:env(safe-area-inset-bottom,0px);
-    --sa-r:env(safe-area-inset-right,0px);
+    --safe-top:env(safe-area-inset-top,0px);
+    --safe-bottom:env(safe-area-inset-bottom,0px);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   /* height:100% (not dvh — iOS Safari's floating URL bar makes dvh resolve short) */
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
     font-family:var(--mono);font-size:13px;overflow:hidden;
-    overscroll-behavior:none;touch-action:manipulation}
-  #map{position:absolute;inset:0}
-  /* map attribution — ghosted black along the bottom, left of the panel; click-through */
-  #map-attrib{position:absolute;z-index:3;bottom:3px;left:0;
-    right:calc(320px + var(--sa-r));text-align:center;pointer-events:none;
-    color:#000;opacity:.55;font-family:var(--mono);font-size:9px;letter-spacing:.2px;
-    text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-    padding:0 8px}
+    overscroll-behavior:none;touch-action:manipulation;text-transform:uppercase}
   button{font-family:var(--mono);cursor:pointer}
-  a{color:var(--accent)}
+  a{color:var(--go)}
   ::-webkit-scrollbar{width:8px;height:8px}
   ::-webkit-scrollbar-thumb{background:#233247;border-radius:4px}
   ::-webkit-scrollbar-track{background:transparent}
 
-  /* ---------- SITREP panel (desktop: docked right / iPhone portrait: full-screen page) ---------- */
-  .panel{position:absolute;z-index:15;background:var(--panel);
-    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-    display:flex;flex-direction:column;overflow:hidden}
-  /* LEFT edge only carries the border (the panel↔map divider); the other three sit
-     at the screen edge where a boxed corner would clip on rounded screens. */
-  #sitrep{top:0;right:0;left:auto;width:320px;bottom:0;
-    border-left:1px solid var(--line)}
-  /* ---------- canifly flyability chart — the panel's top section, sized to content ----------
-     cq units fall back to the viewport; the px caps keep cells sane iPhone→iPad. */
+  /* ---- APP SHELL — ONE full-screen column on every device (iPhone-first). On wide
+          screens it's centred at a phone-like max width so all devices match. ---- */
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;
+    width:100%;max-width:620px;margin:0 auto;
+    border-left:1px solid var(--line);border-right:1px solid var(--line)}
+
+  /* ---- FLYABILITY CHART — the top section, sized to its content ---- */
   #fly-pane{flex:0 0 auto;min-height:0;border-bottom:1px solid var(--line);background:#000;
-    container-type:normal;
     display:flex;flex-direction:column;align-items:center;
-    gap:min(1.6cqh,10px);padding:min(2cqh,12px) min(3cqw,14px)}
-  #fly-pane .board{position:relative;width:100%;max-width:560px;flex:0 1 auto;min-height:0}
+    gap:min(1.6vh,10px);padding:calc(var(--safe-top) + 10px) 14px min(2vh,12px)}
+  #fly-board{position:relative;width:100%;max-width:560px}
   #fly-pane .grid{width:100%;border:1px solid var(--line);border-radius:12px;
-    padding:min(1.4cqh,8px) min(2cqw,10px);display:grid;
+    padding:8px 10px;display:grid;
     grid-template-columns:minmax(0,1.15fr) repeat(4,minmax(0,1fr));   /* labels + NOW..+3h */
     align-content:center;font-variant-numeric:tabular-nums}
   #fly-pane .grow{display:contents}
   #fly-pane .ga,#fly-pane .gc{display:flex;align-items:center;min-width:0;white-space:nowrap;
-    padding:min(1.3cqh,2cqw,5px) min(.6cqh,.9cqw,6px);line-height:1}
-  #fly-pane .ga{justify-content:flex-start;color:var(--ink);letter-spacing:.03em;
-    font-size:min(2.6cqh,3.6cqw,12px)}
-  #fly-pane .gc{justify-content:center;font-weight:700;font-size:min(3.5cqh,4.6cqw,15px);
+    padding:5px 6px;line-height:1}
+  #fly-pane .ga{justify-content:flex-start;color:var(--ink);letter-spacing:.03em;font-size:12px}
+  #fly-pane .gc{justify-content:center;font-weight:700;font-size:15px;
     color:var(--ink);border-left:1px solid #16212b}   /* faint rule between time columns */
   /* reference-unit tags (FT, MPH) */
   #fly-pane .gu{font-size:.58em;font-weight:600;color:inherit;letter-spacing:.02em;margin-left:.18em}
   /* cell fills — binary: fly / can't fly */
-  #fly-pane .gc.good{background:rgba(47,224,122,.14);color:var(--ok)}
-  #fly-pane .gc.bad{background:rgba(255,68,85,.16);color:var(--danger)}
-  #fly-pane .ga.bad{color:var(--danger)}
-  #fly-pane .ghead .gc.bad{background:none;color:var(--danger)}
+  #fly-pane .gc.good{background:rgba(47,224,122,.14);color:var(--go)}
+  #fly-pane .gc.bad{background:rgba(255,68,85,.16);color:var(--nogo)}
+  #fly-pane .ga.bad{color:var(--nogo)}
+  #fly-pane .ghead .gc.bad{background:none;color:var(--nogo)}
   #fly-pane .ghead .ga,#fly-pane .ghead .gc{border-bottom:1px solid var(--line);
-    padding-bottom:min(.8cqh,1.2cqw);font-weight:500;font-size:min(2.6cqh,3.6cqw,12px);color:var(--ink)}
+    padding-bottom:5px;font-weight:500;font-size:12px;color:var(--ink)}
   #fly-pane .ghead .gc{border-left:0}
   #fly-pane .ghead .gc.now{font-weight:700}
-  /* NOW header ambers when a gate input is unknown (unverified ≠ clear) */
-  #fly-pane .ghead .gc.unk{color:var(--warn)}
+  /* NOW header turns yellow when a gate input is unknown (unverified ≠ clear) */
+  #fly-pane .ghead .gc.unk{color:var(--caution)}
   #fly-pane .ga.hi{font-weight:700}
   #fly-pane .ggust .ga,#fly-pane .ggust .gc{border-top:1px solid rgba(116,133,150,.4)}
   /* a cap/gate code cell (GUST/VIS/SKY/WIND/FAA/TRFC/PCPN/KPx) */
-  #fly-pane .gc.rsn{font-size:min(2.5cqh,3.4cqw,13px);font-weight:800;letter-spacing:.03em}
+  #fly-pane .gc.rsn{font-size:13px;font-weight:800;letter-spacing:.03em}
+  /* VERDICT CLOCK — the chart's top-left header cell: live local time, tinted by the
+     overall verdict so a glance at the corner answers "can I fly right now?" */
+  #fly-pane .ga.clock{font-weight:800;font-size:15px;letter-spacing:.02em}
+  #fly-pane .ga.clock.go{color:var(--go)}
+  #fly-pane .ga.clock.caution{color:var(--caution)}
+  #fly-pane .ga.clock.nogo{color:var(--nogo)}
   /* loading shimmer — one cell-text line tall, so nothing shifts on load */
   @keyframes flypulse{0%,100%{opacity:1}50%{opacity:.2}}
   #fly-pane .sk{display:block;border-radius:4px;background:var(--ink-dim);opacity:.22;
-    width:58%;height:min(3.5cqh,4.6cqw,15px);margin:0 auto;animation:flypulse 1.6s ease-in-out infinite}
+    width:58%;height:15px;margin:0 auto;animation:flypulse 1.6s ease-in-out infinite}
   @media (prefers-reduced-motion:reduce){#fly-pane .sk{animation:none}}
-  /* aircraft breach flashes its card headline, map halo and the chart's TRFC cell(s) */
-  @keyframes acflash{0%,100%{color:var(--danger)}50%{color:#fff}}
-  .sit-row.acflash .s1,#fly-pane .gc.acflash{
-    animation:acflash .9s ease-in-out infinite}
-  @media (prefers-reduced-motion:reduce){
-    .sit-row.acflash .s1,#fly-pane .gc.acflash{animation:none}}
-  #sit-body{display:flex;flex-direction:column;align-content:start;
-    overflow-y:auto;padding:4px 0;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+
+  /* ---- SITREP — scrolling list of nearby aircraft / airspace / hazards, fills the rest ---- */
+  #sit-body{display:flex;flex-direction:column;overflow-y:auto;
+    padding:4px 0 calc(var(--safe-bottom) + 6px);-webkit-overflow-scrolling:touch;
+    flex:1 1 auto;min-height:0}
   /* every SITREP row is a uniform info-only 3-line block: icon · three text lines */
   .sit-row{display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:13px;min-height:62px;
     border-bottom:1px solid #10171f}
@@ -111,60 +103,30 @@
   .sit-row .tx{flex:1;min-width:0;line-height:1.34;display:flex;flex-direction:column;justify-content:center}
   .sit-row .tx .s1,.sit-row .tx .s2,.sit-row .tx .s3{display:block;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}   /* any overlong line truncates with … */
-  .sit-row .tx .s1{color:var(--ink)}
+  .sit-row .tx .s1{color:var(--ink);letter-spacing:.3px}
   .sit-row .tx .s2,.sit-row .tx .s3{color:var(--ink-dim);font-size:12px}
-  .sit-row.alert .s1{color:var(--warn)}
-  .sit-row.danger .s1{color:var(--danger)}
+  .sit-row.alert .s1{color:var(--caution)}   /* yellow-alert card */
+  .sit-row.danger .s1{color:var(--nogo)}     /* red-warning card */
   .sit-empty{padding:14px 12px;font-size:13px;color:var(--ink-dim);line-height:1.5}
-  /* everything upper-cased; .u.lc opts a unit out (SI symbols / Kp) — none in use now */
-  body{text-transform:uppercase}
+  /* units keep their own casing/spacing inside the upper-cased body (.lc = keep lowercase) */
   .u{letter-spacing:0;font-style:normal}
   .u.lc{text-transform:none}
-  .sit-row .tx .s1{letter-spacing:.3px}
-
-  #user-dot{width:16px;height:16px;border-radius:50%;background:var(--accent);
-    border:2.5px solid #fff;box-shadow:0 0 0 0 rgba(47,224,122,.6);animation:pulse 2.2s infinite}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,224,122,.6)}70%{box-shadow:0 0 0 16px rgba(47,224,122,0)}100%{box-shadow:0 0 0 0 rgba(47,224,122,0)}}
-
-  /* ---------- mobile PORTRAIT: two full-screen pages, map ⇄ panel ----------
-     (landscape is wide enough for the docked panel → falls through to desktop above) */
-  @media (max-width:1000px) and (orientation:portrait){
-    #map{bottom:0}
-    /* panel slides up over the map; hidden by default, body.panel-open shows it.
-       100dvh tracks the shrinking address bar so it never spills under Safari's chrome. */
-    .panel{left:0!important;right:0!important;top:0!important;bottom:auto!important;
-      width:auto!important;height:100dvh;z-index:30;padding:0!important;
-      background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-      border:none;border-radius:0;box-shadow:none;
-      /* CLOSED: translate by 100vh (includes iOS's toolbar band) + margin so it fully
-         clears the screen; height stays 100dvh so the OPEN panel fits the viewport. */
-      transform:translateY(calc(100vh + 40px));
-      transition:transform .26s cubic-bezier(.22,.61,.36,1);visibility:visible}
-    body.panel-open .panel{transform:translateY(0)}
-    /* pad the chart below the notch / status bar */
-    #fly-pane{padding-top:calc(var(--sa-t) + 10px)}
-    #sit-body{padding-bottom:calc(var(--sa-b) + 6px)}
-    #fly-board{cursor:pointer}          /* tap the chart to drop back to the map */
-    #map-attrib{right:0;bottom:calc(var(--sa-b) + 2px)}
-  }
 </style>
 </head>
 <body>
-<div id="map"></div>
-<!-- map attribution (OSM/CARTO licence), ghosted into the dark basemap -->
-<div id="map-attrib" aria-hidden="true">© OpenStreetMap · © CARTO · NEXRAD · Iowa State Mesonet</div>
-<!-- panel: docked right (desktop/tablet), full-screen page on iPhone portrait.
-     No header/title — chart, then scrolling SITREP cards; verdict = ring colour. -->
-<div id="sitrep" class="panel">
+<!-- One full-screen column on every device: the flyability chart (with a verdict clock
+     in its top-left corner), then the scrolling SITREP. The overall verdict is the
+     clock colour — there is no map. -->
+<main id="app">
+  <section id="fly-pane">
+    <div id="fly-board" role="group" aria-label="Can I Fly? drone preflight"></div>
+  </section>
   <!-- hidden canonical verdict element; sitrepTick stamps its class (tests/parity) -->
   <span id="sit-title" hidden></span>
-  <div id="fly-pane">
-    <div id="fly-board" class="board" role="group" aria-label="Can I Fly? drone preflight"></div>
-  </div>
   <div id="sit-body">
-    <div class="sit-empty">ACQUIRING POSITION…</div>
+    <div class="sit-empty">ACQUIRING GPS…</div>
   </div>
-</div>
+</main>
 
 
 <script>
@@ -177,12 +139,6 @@ const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=
 // SINGLE mobile breakpoint, matching the CSS @media below. The two-page toggle is
 // PORTRAIT-only: a phone in landscape is wide enough for the docked-right panel
 // (like a tablet/desktop), so landscape falls through to the docked layout. Every
-// JS layout decision reads this — a 900/1000 mix once left the 901–1000px range
-// with sheet panels but desktop map padding.
-const MQ_MOBILE=window.matchMedia('(max-width:1000px) and (orientation:portrait)');
-// Coarse pointer (finger / iPad trackpad cursor) — on touch the raw gestures are
-// swallowed at map init; on desktop MapLibre's own (disabled) handlers cover it.
-const COARSE=!!(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches);
 async function getJSON(url,opts={}){
   const c=new AbortController(); const to=setTimeout(()=>c.abort(),opts.timeout||15000);
   try{
@@ -191,8 +147,8 @@ async function getJSON(url,opts={}){
     return await r.json();
   } finally { clearTimeout(to); }
 }
-// All times shown in the user's LOCAL time — the timezone detected for their
-// location (USER.tz, from IP geolocation), falling back to the browser's zone.
+// All times shown in the user's LOCAL time — the browser's own timezone (which, for a
+// GPS-located device, is the local zone). USER.tz is honoured if ever set.
 const tzOpt = () => USER.tz ? {timeZone:USER.tz} : {};
 // THE data-refresh cadence, seconds. Everything live reads this one knob: the
 // auto-refresh pulse, the every-pulse feeds (refresh:REFRESH_S below) and the
@@ -208,6 +164,14 @@ const store=(k,v)=>{ try{ localStorage.setItem(k,String(v)); }catch(e){} };
 // can never disagree about how big a mile is on screen.
 const geoDeltas=(km,lat)=>({dLat:km/111.32,
   dLon:km/(111.32*Math.max(0.2,Math.cos(lat*Math.PI/180)))});
+// a closed [lon,lat] ring approximating a km-radius circle (equirectangular — exact enough
+// at these radii); used to buffer stadium points into their 3 nm TFR polygons
+function circleRing(lat,lon,km,n){
+  const {dLat,dLon}=geoDeltas(km,lat), ring=[];
+  for(let i=0;i<=n;i++){ const t=i/n*2*Math.PI;
+    ring.push([lon+dLon*Math.cos(t), lat+dLat*Math.sin(t)]); }
+  return ring;
+}
 // great-circle distance, km
 function havKm(lat1,lon1,lat2,lon2){
   const R=6371,d=Math.PI/180;
@@ -245,10 +209,8 @@ function adsbRadiusNm(){
   return Math.min(ADSB_MAX_NM,Math.max(15,Math.ceil(DATA_MI*MI_TO_KM*KM_TO_NM)));
 }
 async function adsbViewport(){
-  // Centre on YOU (not the panel-offset canvas centre), so the set is symmetric about
-  // your position. Pre-fix falls back to the map centre.
-  const c = USER.lat!=null ? {lat:USER.lat,lng:USER.lon} : gl.getCenter();
-  const j=await adsb('/point/'+c.lat.toFixed(3)+'/'+c.lng.toFixed(3)+'/'+adsbRadiusNm());
+  // Centred on YOUR GPS position (only ever called after a fix).
+  const j=await adsb('/point/'+USER.lat.toFixed(3)+'/'+USER.lon.toFixed(3)+'/'+adsbRadiusNm());
   return {ac:j.ac||[]};
 }
 // rotorcraft? ICAO emitter category A7, else a helicopter/rotor mention in the description
@@ -277,14 +239,13 @@ function acFeatures(j,kind){
 // features last loaded for a layer id (from our own LAYER_STATE, not MapLibre internals)
 function featsIn(id){const st=LAYER_STATE[id];return (st&&st.features)||[];}
 // ArcGIS envelope (west,south,east,north) for the airspace/NPS pulls — a fixed
-// DATA_MI (#3) box centred on YOU, so airspace covers the same 25 mi as the aircraft
-// pull, identical on every device. Pre-fix falls back to the map centre. Refetched on
-// recenter (see refreshViewport). A box circumscribes the 25 mi circle; the SITREP then
-// cards zones within the 25 mi radius, exactly like aircraft.
+// DATA_MI (#3) box centred on your GPS position, so airspace covers the same 25 mi as
+// the aircraft pull, identical on every device. Only called after a fix. Refetched when
+// you move (see refetchNearbyOnMove). A box circumscribes the 25 mi circle; the SITREP
+// then cards zones within the 25 mi radius, exactly like aircraft.
 function viewEnv(){
-  const c = USER.lat!=null ? {lat:USER.lat,lng:USER.lon} : gl.getCenter();
-  const {dLat,dLon}=geoDeltas(DATA_MI*MI_TO_KM,c.lat);
-  return [c.lng-dLon,c.lat-dLat,c.lng+dLon,c.lat+dLat].map(n=>n.toFixed(3)).join(',');
+  const {dLat,dLon}=geoDeltas(DATA_MI*MI_TO_KM,USER.lat);
+  return [USER.lon-dLon,USER.lat-dLat,USER.lon+dLon,USER.lat+dLat].map(n=>n.toFixed(3)).join(',');
 }
 // polygon feature -> a representative [lon,lat] (first vertex)
 function polyPt(f){
@@ -332,125 +293,22 @@ const escapeHtml =s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 
 
 /* =====================================================================
-   1. MAP — CARTO dark basemap (keyless raster tiles)
+   1. RADAR TILE SOURCE — NEXRAD base-reflectivity mosaic (Iowa State Mesonet,
+   keyless). There is no map, so these tiles are never DRAWN — the precipitation
+   gate SAMPLES them on an offscreen canvas (see sampleRadarPrecip). A ?bust query
+   pulls a fresh mosaic once per RADAR_BUST_S window (the source updates ~5 min);
+   the sampler's memo keys on that bust value, so advancing it invalidates old scans.
    ===================================================================== */
-// NEXRAD base-reflectivity mosaic tiles (Iowa State Mesonet, keyless). ?bust pulls a
-// fresh mosaic once per RADAR_BUST_S window (source updates ~5 min), decoupled from the
-// faster pulse. ONE bust value shared by the map layer + PCPN sampler → shared cache.
-const RADAR_URL='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
-const RADAR_BUST_S=60;
-const radarBust=()=>Math.floor(Date.now()/(RADAR_BUST_S*1000));
-let _radarBust=radarBust();
-const RADAR_TILE=RADAR_URL+'?'+_radarBust;
-function refreshRadar(){
-  const b=radarBust(); if(b===_radarBust) return;   // same refresh window — nothing new
-  _radarBust=b;
-  const s=gl.getSource('radar'); if(s&&s.setTiles) s.setTiles([RADAR_URL+'?'+b]);
-}
-const gl = new maplibregl.Map({
-  container:'map',
-  style:{
-    version:8,
-    glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-    sources:{
-      carto:{ type:'raster', tileSize:256,
-        tiles:['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-               'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-               'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'] },
-      // NEXRAD mosaic; maxzoom caps the TILE fetch at its native detail (~z8), not the map zoom
-      radar:{ type:'raster', tileSize:256, maxzoom:8,
-        tiles:[RADAR_TILE] }
-    },
-    // raster-resampling:'nearest' → raw NEXRAD pixels, no bilinear smoothing
-    layers:[{id:'carto',type:'raster',source:'carto'},
-      {id:'radar',type:'raster',source:'radar',
-        paint:{'raster-opacity':0.1,'raster-resampling':'nearest'}}]
-  },
-  center:[-96,39], zoom:3.4, minZoom:1.1, maxZoom:16,   // start over the USA until a fix lands
-  renderWorldCopies:true, attributionControl:false
-});
-// panel padding applied before the first render → the first view is already framed
-// left of the docked panel; setMapPadding() keeps it in sync on resize/orientation
-gl.setPadding(MQ_MOBILE.matches?{top:0,right:0,bottom:0,left:0}:{top:20,left:24,right:336,bottom:24});
-window.__sitrep={map:gl}; // debug/test handle
+const RADAR_TILE_URL='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
+const RADAR_BUST_SECONDS=60;
+const currentRadarBust=()=>Math.floor(Date.now()/(RADAR_BUST_SECONDS*1000));
+let radarBustWindow=currentRadarBust();
+// advance the shared bust window; the precip sampler's memo keys on it, so a new
+// window simply invalidates the cached scans (there is nothing to redraw).
+function refreshRadar(){ const b=currentRadarBust(); if(b!==radarBustWindow) radarBustWindow=b; }
 
-// Map is PERMANENTLY LOCKED — no user camera input. Every MapLibre zoom/rotate/tilt
-// handler is disabled (dragPan/boxZoom/keyboard via setPanLock); the listeners below
-// swallow raw gestures so the browser can't scroll/zoom the PAGE either.
-gl.scrollZoom.disable();
-gl.doubleClickZoom.disable();
-gl.touchZoomRotate.disable();
-gl.touchPitch.disable();
-gl.dragRotate.disable();
-{
-  const cvs=gl.getCanvasContainer();
-  cvs.addEventListener('wheel',e=>e.preventDefault(),{passive:false});
-  cvs.addEventListener('dblclick',e=>e.preventDefault());
-  if(COARSE){
-    gl.dragPan.disable();
-    cvs.style.touchAction='none';   // stop the browser scrolling/zooming the page
-    cvs.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
-  }
-}
-
-/* =====================================================================
-   2. ICONS — the only map markers: plane / helicopter silhouettes (per the ADS-B
-   rotorcraft category), tinted green civil / yellow military / red emergency, drawn
-   nose-up so icon-rotate = heading. Rasterised to canvas, registered via addImage.
-   ===================================================================== */
-// ONE colour per aircraft feed — map silhouettes, layer defs and the SITREP tail-number
-// tint all read this, so map and panel agree on what green/yellow/red means.
-// aircraft IDENTITY is one neutral colour (white) — traffic never competes with the
-// green/amber/red VERDICT palette. Only an emergency squawk keeps red (a real danger),
-// and a low-aircraft breach is flagged by the pulsing alert ring, not the icon colour.
-const AC_COL={nearair:'#eaf1f8',mil:'#eaf1f8',sos:'#ff4455'};
-// shared canvas setup for the silhouette rasterisers (centre-origin, u = 1/32 px)
-function iconCanvas(px){
-  const s=px||40, c=document.createElement('canvas'); c.width=c.height=s;
-  const x=c.getContext('2d',{willReadFrequently:true}); x.translate(s/2,s/2);
-  return {x,u:s/32,s};
-}
-function shapeIcon(color,pts,px){
-  const {x,u,s}=iconCanvas(px);
-  x.fillStyle=color; x.strokeStyle='rgba(3,8,14,.75)'; x.lineWidth=u*1.4;
-  x.lineJoin='round'; x.beginPath();
-  pts.forEach((p,i)=>{const X=p[0]*u,Y=p[1]*u; i?x.lineTo(X,Y):x.moveTo(X,Y);});
-  x.closePath(); x.fill(); x.stroke();
-  return x.getImageData(0,0,s,s);
-}
-// plane silhouette, nose up
-const PLANE=[[0,-15],[-1.6,-6],[-13,3],[-13,6],[-1.6,3.5],[-1.6,11],[-5,14.5],[-5,16],[0,14],
-  [5,16],[5,14.5],[1.6,11],[1.6,3.5],[13,6],[13,3],[1.6,-6]];
-// helicopter silhouette, nose up — drawn from parts (tail boom + crossed main rotor + pod),
-// since a rotor disc can't be traced as one outline
-function heliShape(color,px){
-  const {x,u,s}=iconCanvas(px);
-  x.lineJoin='round'; x.lineCap='round';
-  const rod=(x1,y1,x2,y2,w)=>{           // colour bar with a dark outline
-    x.strokeStyle='rgba(3,8,14,.8)'; x.lineWidth=u*(w+1.6);
-    x.beginPath(); x.moveTo(x1*u,y1*u); x.lineTo(x2*u,y2*u); x.stroke();
-    x.strokeStyle=color; x.lineWidth=u*w;
-    x.beginPath(); x.moveTo(x1*u,y1*u); x.lineTo(x2*u,y2*u); x.stroke();
-  };
-  rod(0,2, 0,15, 2.2);            // tail boom (nose up → tail down) — no tail rotor
-  rod(-13,-11, 13,7, 2.0);        // main rotor — two crossed blades (X) centred on the hub (0,-2)
-  rod(-13,7, 13,-11, 2.0);
-  x.beginPath(); x.ellipse(0,-2,4.4*u,7.2*u,0,0,Math.PI*2);   // fuselage pod (over the hub)
-  x.fillStyle=color; x.fill();
-  x.strokeStyle='rgba(3,8,14,.8)'; x.lineWidth=u*1.4; x.stroke();
-  return x.getImageData(0,0,s,s);
-}
-function addImg(name,data){ if(!gl.hasImage(name)) gl.addImage(name,data,{pixelRatio:2}); }
-function registerIcons(){
-  addImg('ac-near',  shapeIcon(AC_COL.nearair,PLANE));    // civil plane = white
-  addImg('ac-mil',   shapeIcon(AC_COL.mil,PLANE));        // military plane = white (labelled on its card)
-  addImg('ac-sos',   shapeIcon(AC_COL.sos,PLANE,44));     // emergency plane = red
-  addImg('heli-near',heliShape(AC_COL.nearair));          // civil helicopter = white
-  addImg('heli-mil', heliShape(AC_COL.mil));              // military helicopter = white
-  addImg('heli-sos', heliShape(AC_COL.sos,44));           // emergency helicopter = red
-}
-// per-contact map icon: the heli silhouette for rotorcraft, the plane otherwise
-const acIconExpr=k=>['case',['==',['get','heli'],1],'heli-'+k,'ac-'+k];
+// debug/test handle — modules attached as the app wires up (see boot)
+window.__sitrep={};
 
 /* =====================================================================
    3. LAYER DEFINITIONS
@@ -462,47 +320,25 @@ const acIconExpr=k=>['case',['==',['get','heli'],1],'heli-'+k,'ac-'+k];
    ===================================================================== */
 const LAYERS=[];
 const defLayer=c=>LAYERS.push(c);
-// user position state — filled by IP geolocation instantly, refined by GPS
-const USER={lat:null,lon:null,src:null,tz:''};
+// your GPS position — {lat,lon} once fixed; acc = fix accuracy (m); ts = last-fix time.
+const USER={lat:null,lon:null,src:null,acc:null,tz:'',ts:0};
 
-/* ---------------- Movement ---------------- */
+/* ---------------- Aircraft ----------------
+   Every layer def is just {id, label, refresh, viewport?, loader}. The loader returns a
+   GeoJSON FeatureCollection whose features the SITREP reads (there is no map). Emergency
+   squawks get NO special treatment — a plane in distress is a general aircraft, caught by
+   the position-scoped `nearair` pull like any other. */
 defLayer({
-  id:'nearair', label:'Aircraft (view)', color:AC_COL.nearair, refresh:REFRESH_S,
-  viewport:true,   // scoped to the map area → refetch on view change
-  icon:acIconExpr('near'), rotate:true, iconSize:0.6,
-  // civil (non-military) aircraft in the view; refetched on move + every pulse
+  id:'nearair', label:'Aircraft (nearby)', refresh:REFRESH_S,
+  viewport:true,   // scoped to your GPS area → refetched when you move + every pulse
   loader: async ()=>
     ({type:'FeatureCollection',
       features:acFeatures(await adsbViewport(),'nearair').filter(f=>!f.properties.mil)})
 });
 
 defLayer({
-  id:'mil', label:'Military aircraft', color:AC_COL.mil, refresh:REFRESH_S,
-  icon:acIconExpr('mil'), rotate:true, iconSize:0.5,
+  id:'mil', label:'Military aircraft', refresh:REFRESH_S,
   loader: async ()=> ({type:'FeatureCollection',features:acFeatures(await adsb('/mil'),'mil')})
-});
-
-defLayer({
-  id:'sos', label:'Emergency squawks', color:AC_COL.sos, refresh:REFRESH_S,
-  icon:acIconExpr('sos'), rotate:true, iconSize:0.6,
-  loader: async ()=>{
-    // 7700 = general emergency, 7600 = radio failure, 7500 = unlawful interference
-    const codes=['7700','7600','7500'];
-    const results=await Promise.allSettled(codes.map(c=>adsb('/squawk/'+c)));
-    // all three down = outage, not "zero emergencies" → throw so the runtime keeps
-    // last-good and retries; a single failure still returns the others
-    if(results.every(r=>r.status!=='fulfilled')) throw results[0].reason;
-    const feats=[];
-    results.forEach((r,i)=>{
-      if(r.status!=='fulfilled') return;
-      (r.value.ac||[]).forEach(a=>{
-        if(a.lat==null||a.lon==null) return;
-        // extra: which emergency code; _rot keeps this feed's plain-track rotation
-        feats.push(acFeature(a,'sos',{code:codes[i],_rot:a.track!=null?a.track:0}));
-      });
-    });
-    return {type:'FeatureCollection',features:feats};
-  }
 });
 
 
@@ -664,8 +500,6 @@ defLayer({
    4. LAYER RUNTIME — sources, styles, refresh loop
    ===================================================================== */
 const LAYER_STATE={};
-// icons grow with zoom so they read clearly far out and up close
-const iconSize=base=>['interpolate',['linear'],['zoom'],2,base*0.85,6,base*1.3,11,base*1.9];
 // SITREP re-reads layer data every refresh — debounced so a burst of layer updates
 // recomputes once. The chart repaints FIRST (its TRFC cells read the aircraft layers)
 // so the SITREP tick can colour its title from the chart's fresh NOW column.
@@ -715,30 +549,6 @@ function ensureGroundElev(pts){
 // pressure altitude to true MSL. null until the first weather fetch lands.
 let QNH_HPA=null;
 
-function ensureMapLayer(cfg){
-  const sid='src-'+cfg.id;
-  if(gl.getSource(sid)) return;
-  gl.addSource(sid,{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  if(cfg.geom==='fill'){
-    const fillCol=cfg.colored?['coalesce',['get','_col'],cfg.color]:cfg.color;
-    gl.addLayer({id:'ly-'+cfg.id,type:'fill',source:sid,
-      paint:{'fill-color':fillCol,'fill-opacity':cfg.fillOpacity!=null?cfg.fillOpacity:0.26,
-        'fill-outline-color':fillCol}});
-    gl.addLayer({id:'lyl-'+cfg.id,type:'line',source:sid,
-      paint:{'line-color':fillCol,'line-width':cfg.lineWidth!=null?cfg.lineWidth:1.4,
-        'line-opacity':cfg.lineOpacity!=null?cfg.lineOpacity:0.85}});
-  }else{
-    gl.addLayer({id:'ly-'+cfg.id,type:'symbol',source:sid,layout:{
-      'icon-image': cfg.icon,
-      'icon-size': iconSize(cfg.iconSize||0.6),
-      'icon-rotate': cfg.rotate?['coalesce',['get','_rot'],0]:0,
-      'icon-rotation-alignment':'map','icon-pitch-alignment':'map',
-      'icon-allow-overlap':true,'icon-ignore-placement':true}});
-  }
-  const vis=cfg.defaultOff?'none':'visible';
-  gl.setLayoutProperty('ly-'+cfg.id,'visibility',vis);
-  if(gl.getLayer('lyl-'+cfg.id)) gl.setLayoutProperty('lyl-'+cfg.id,'visibility',vis);
-}
 // retry backoff while a layer is failing — short and bounded (1.5s, 3s, 4.5s, cap 6s) so a
 // recovering feed is caught within seconds. Shared by the quickTimer and the pulse skip gate.
 const failBackoffMs=n=>Math.min(6000,1500*n);
@@ -760,12 +570,9 @@ async function runLayer(cfg){
       try{
         const fc=await cfg.loader();
         if(myGen!==st.gen) return;               // superseded by a newer refresh — drop this result
-        // a null result = "no update" — keep what's loaded
-        if(fc){
-          const src=gl.getSource('src-'+cfg.id);
-          if(src) src.setData(fc);
-          st.features=fc.features||[];
-        }
+        // a null result = "no update" — keep what's loaded. Features are STORED for the
+        // SITREP/chart to read; there is no map layer to push them to.
+        if(fc) st.features=fc.features||[];
         st.fails=0; st.failSince=0; st.everLoaded=true;   // recovered / printed at least once
         scheduleSitrep();   // SITREP re-reads the fresh data as part of the refresh
         return;
@@ -826,13 +633,12 @@ function pulse(force){
 }
 function refreshTick(){ if(Date.now()-refreshBase>=REFRESH_S*1000) pulse(); }
 
-// every layer's source + style is created here and stays on (SPC defaultOff = hidden,
-// loaded only to feed the SITREP outlook card)
+// initialise per-layer runtime state (features + fetch bookkeeping). There is no map, so
+// nothing is drawn — the loaders just populate LAYER_STATE[id].features for the SITREP.
 function initLayers(){
   LAYERS.forEach(cfg=>{
     LAYER_STATE[cfg.id]={features:[],started:false,everLoaded:false,
       gen:0,quickTimer:null,fails:0,failSince:0,loading:false,loadStart:0};
-    ensureMapLayer(cfg);
   });
 }
 
@@ -862,12 +668,11 @@ const WMO={0:['☀️','clear'],1:['🌤️','mostly clear'],2:['⛅','partly cl
   80:['🌦️','light showers'],81:['🌧️','showers'],82:['⛈️','heavy showers'],85:['🌨️','snow showers'],86:['🌨️','snow showers'],
   95:['⛈️','thunderstorm'],96:['⛈️','storm, hail'],99:['⛈️','storm, hail']};
 async function loadWeather(force){
-  if(wxBusy) return;
-  const c=gl.getCenter();
-  if(!force && WX && wxLat!=null && havKm(wxLat,wxLon,c.lat,c.lng)<2 && Date.now()-wxAt<300000) return;
+  if(wxBusy || USER.lat==null) return;   // GPS-located only
+  if(!force && WX && wxLat!=null && havKm(wxLat,wxLon,USER.lat,USER.lon)<2 && Date.now()-wxAt<300000) return;
   wxBusy=true;
   try{
-    const u=`https://api.open-meteo.com/v1/forecast?latitude=${c.lat.toFixed(3)}&longitude=${c.lng.toFixed(3)}`
+    const u=`https://api.open-meteo.com/v1/forecast?latitude=${USER.lat.toFixed(3)}&longitude=${USER.lon.toFixed(3)}`
       +`&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m`
       +`&daily=temperature_2m_max,temperature_2m_min`
       +`&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=1`;
@@ -876,7 +681,7 @@ async function loadWeather(force){
     WX={tempF:cur.temperature_2m, feelsF:cur.apparent_temperature, code:cur.weather_code,
         windMph:cur.wind_speed_10m, windDir:cur.wind_direction_10m,
         hiF:(day.temperature_2m_max||[])[0], loF:(day.temperature_2m_min||[])[0]};
-    wxLat=c.lat; wxLon=c.lng; wxAt=Date.now();
+    wxLat=USER.lat; wxLon=USER.lon; wxAt=Date.now();
   }catch(e){ /* keep the last-good WX */ }
   finally{ wxBusy=false; scheduleSitrep(); }
 }
@@ -947,191 +752,84 @@ function wxCard(wxState, wn){
   return {pin:false, card:mkCard('',emoji,l1,l2,l3,false)};
 }
 /* =====================================================================
-   7. LOCATION + SITREP — the "at a glance" intelligence layer
-   Fix chain: ipwho.is (instant, keyless) -> browser GPS refine (denial keeps the IP
-   fix). All client-side; position leaves the browser only as anonymous lat/lon params.
+   7. LOCATION — GPS ONLY (no IP fallback)
+   watchPosition() streams fixes. The FIRST commits after a short settle window (or at
+   once if a ping is accurate enough); later fixes update the position — smoothed while
+   you're stationary, snapped on a real move. Moving far enough refetches the nearby
+   feeds for your new area. If permission is denied or unavailable, geolocationDenied is
+   set and the SITREP shows a permanent red LOCATION card. Position never leaves the
+   browser except as anonymous lat/lon query params to the keyless data feeds.
    ===================================================================== */
-let userMarker=null, sitrepTimer=null;
+let sitrepTimer=null;
 
-// FIXED framing zoom — a pure function of LATITUDE (not the viewport), so the locked
-// view shows the SAME scale on every device. VIEW_REF_PX is the on-screen pixel diameter
-// the `miles`-radius circle targets; Web-Mercator m/px then fixes the zoom for that latitude.
-const VIEW_REF_PX=475;   // tuned to the comfortable desktop framing of the 10 mi view
-function viewZoom(lat,miles){
-  const span=2*(miles||VIEW_MI)*MI_TO_KM*1000;              // circle diameter, metres
-  const mpp0=40075016.686*Math.cos(lat*Math.PI/180)/512;   // metres/pixel at zoom 0 (512-px tiles)
-  return Math.max(0, Math.log2(VIEW_REF_PX*mpp0/span));
-}
-// Frame the map to a `miles`-radius circle around (lat,lon) at the fixed viewZoom,
-// so the framed scale is identical across devices. The map's padding (set on
-// desktop) still lands the point centred in the open area left of the panel.
-function flyToRadiusMi(lat,lon,miles){
-  const z=viewZoom(lat,miles);
-  try{ gl.flyTo({center:[lon,lat],zoom:z,duration:1200}); }
-  catch(e){ gl.jumpTo({center:[lon,lat],zoom:z}); }
-}
+// --- fix pipeline tuning ---
+const FIRST_FIX_SETTLE_MS=3000;   // collect pings this long, then commit the most accurate
+const GOOD_ACCURACY_M=65;         // a ping at least this accurate commits immediately
+const POSITION_SMOOTHING=0.25;    // low-pass factor for stationary jitter (0 frozen … 1 raw)
+const REAL_MOVE_KM=0.05;          // a fix farther than this from the smoothed point = a real move → snap
+const REFETCH_MOVE_KM=0.5;        // moving this far refetches nearby aircraft/airspace for the new area
 
-// ---- FIX PIPELINE — GPS watch starts at load. A ping ≤ GEO_GOOD_ACC_M commits
-// immediately; otherwise pings are collected up to GEO_SETTLE_MS and the most accurate
-// commits. IP is a fallback only if GPS delivers nothing by GEO_IP_FALLBACK_MS (a later
-// GPS grant re-frames onto the real spot). No absolute accuracy cut-off — a couple of km
-// off beats an IP centroid. After commit, pings keep updating the fix (EMA-smoothed).
-const GEO_SETTLE_MS=3000, GEO_IP_FALLBACK_MS=6000;
-const GEO_GOOD_ACC_M=65;   // a ping this accurate is good enough → commit NOW, don't wait out the settle
-const GEO_EMA=0.25;        // dot low-pass factor (0 = frozen, 1 = raw/no smoothing)
-const GEO_JUMP_KM=0.05;    // a fix >50 m from the smoothed point = real move → snap, no lag
-let _geoBest=null, _geoBestAcc=Infinity, _geoDone=false, _ipFix=null;
-let _emaLat=null,_emaLon=null;
-function commitGeo(){
-  if(_geoDone||!_geoBest) return;
-  _geoDone=true;
-  _emaLat=_geoBest.lat; _emaLon=_geoBest.lon;
-  setUserFix(_geoBest.lat,_geoBest.lon,'gps',null);
+let firstFixCommitted=false, bestFirstPing=null, bestAccuracyM=Infinity;
+let smoothedLat=null, smoothedLon=null;
+let geolocationDenied=false, geoWatchId=null;
+let lastFetchLat=null, lastFetchLon=null;
+
+function commitFirstFix(){
+  if(firstFixCommitted||!bestFirstPing) return;
+  firstFixCommitted=true;
+  smoothedLat=bestFirstPing.lat; smoothedLon=bestFirstPing.lon;
+  setUserFix(bestFirstPing.lat,bestFirstPing.lon,bestFirstPing.acc);
 }
-function onGeoFix(lat,lon,acc){
+function onGeoPing(lat,lon,acc){
   const a=acc==null?9999:acc;
-  if(a<_geoBestAcc) _geoBestAcc=a;
-  if(!_geoDone){
-    // settle window: the first ping arms the ceiling, every ping competes on accuracy,
-    // but a sharp-enough ping commits at once (the ceiling only bites if none shows up)
-    if(!_geoBest) setTimeout(commitGeo,GEO_SETTLE_MS);
-    if(!_geoBest || a<=_geoBest.acc) _geoBest={lat,lon,acc:a};
-    if(a<=GEO_GOOD_ACC_M) commitGeo();   // good enough → frame now
+  if(a<bestAccuracyM) bestAccuracyM=a;
+  if(!firstFixCommitted){
+    // the first ping arms the settle timer; every ping competes on accuracy; a sharp
+    // enough ping commits at once (the timer only bites if none does)
+    if(!bestFirstPing) setTimeout(commitFirstFix,FIRST_FIX_SETTLE_MS);
+    if(!bestFirstPing || a<=bestFirstPing.acc) bestFirstPing={lat,lon,acc:a};
+    if(a<=GOOD_ACCURACY_M) commitFirstFix();
     return;
   }
-  if(a>Math.max(150,_geoBestAcc*3)) return;   // junk vs what this device can do → drop
-  if(_emaLat==null || havKm(_emaLat,_emaLon,lat,lon)>GEO_JUMP_KM){ // real move → snap
-    _emaLat=lat; _emaLon=lon;
-  } else {                                                          // stationary jitter → smooth
-    _emaLat+=GEO_EMA*(lat-_emaLat); _emaLon+=GEO_EMA*(lon-_emaLon);
+  if(a>Math.max(150,bestAccuracyM*3)) return;   // junk vs what this device can do → drop
+  if(smoothedLat==null || havKm(smoothedLat,smoothedLon,lat,lon)>REAL_MOVE_KM){
+    smoothedLat=lat; smoothedLon=lon;                                   // real move → snap
+  } else {
+    smoothedLat+=POSITION_SMOOTHING*(lat-smoothedLat);                  // stationary jitter → smooth
+    smoothedLon+=POSITION_SMOOTHING*(lon-smoothedLon);
   }
-  setUserFix(_emaLat,_emaLon,'gps',null);
+  setUserFix(smoothedLat,smoothedLon,a);
 }
-// IP frames the map only as a fallback: GPS denied/unavailable, or no ping by the timer
-let _geoFailed=false;
-function ipFallbackNow(){
-  if(!_geoDone && USER.lat==null && _ipFix) setUserFix(_ipFix.lat,_ipFix.lon,'ip',_ipFix.meta);
-}
-let _ipTimer=null;
-async function locate(){
-  startGeoWatch();   // pings start now; the settled fix commits 3 s after the first
-  if(!_ipTimer) _ipTimer=setTimeout(ipFallbackNow,GEO_IP_FALLBACK_MS);
-  if(_ipFix) return;   // IP already looked up (a retry only needs the watch kick)
-  try{
-    const j=await getJSON('https://ipwho.is/',{timeout:9000});
-    if(j&&j.success!==false&&j.latitude!=null){
-      _ipFix={lat:j.latitude,lon:j.longitude,
-        meta:{place:j.city,region:j.region,rc:j.region_code,cc:j.country_code,
-          tz:(j.timezone&&j.timezone.id)||''}};
-      if(_ipFix.meta.tz&&!USER.tz) USER.tz=_ipFix.meta.tz;   // tz is safe to take early
-      if(_geoFailed) ipFallbackNow();   // GPS already refused → don't wait out the timer
-    }
-  }catch(e){ console.warn('[ip-locate]',e.message); }
-}
-let geoWatchId=null;
-function startGeoWatch(){
+function startGpsWatch(){
   if(geoWatchId!=null) return;
-  if(!navigator.geolocation){ _geoFailed=true; ipFallbackNow(); return; }
+  if(!navigator.geolocation){ geolocationDenied=true; sitrepTick(); return; }
   try{
     geoWatchId=navigator.geolocation.watchPosition(
-      pos=>onGeoFix(pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy),
-      err=>{ if(err&&err.code===1){ _geoFailed=true; ipFallbackNow(); } },   // PERMISSION_DENIED
+      pos=>onGeoPing(pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy),
+      err=>{ if(err&&err.code===1){ geolocationDenied=true; sitrepTick(); } },   // PERMISSION_DENIED
       {enableHighAccuracy:true,timeout:10000,maximumAge:5000});
-  }catch(e){ _geoFailed=true; ipFallbackNow(); }
+  }catch(e){ geolocationDenied=true; sitrepTick(); }
 }
-// map is always locked on your location; locMode is a constant (2 = locked) so the
-// checks below read clearly, and never changes
-const locMode=2;
-// disable the remaining MapLibre handlers (dragPan on desktop, boxZoom, keyboard);
-// the rest are already disabled at map init. Called once at load — never unlocks.
-function setPanLock(on){
-  (COARSE?['boxZoom','keyboard']:['dragPan','boxZoom','keyboard'])
-    .forEach(k=>{ try{ on?gl[k].disable():gl[k].enable(); }catch(e){} });
-}
-// ---- FRAMING + LOCKED FOLLOW --------------------------------------------------
-// frameNow() is the ONE authoritative camera move: center on a point + reset the zoom to
-// the 10 mi VIEW; _framing blocks interruption of the ~1.2s animation. While locked, each
-// committed fix runs lockFollow(): within LOCK_FOLLOW_KM → hold; walking → ease onto the
-// fix; a huge correction (> LOCK_REFRAME_KM) → full re-frame.
-const LOCK_FOLLOW_KM=0.025;    // follow deadband — the fix must really move ~25 m
-const LOCK_REFRAME_KM=3;       // beyond this it's not walking — re-frame outright
-const LOCK_ONTARGET_KM=0.12;   // "view is on the fix" for the fetch gate + snap-back
-let _framing=false, _frameT=null;
-function frameNow(lat,lon){
-  _framing=true; clearTimeout(_frameT);
-  flyToRadiusMi(lat,lon,VIEW_MI);
-  // when the flyTo settles, correct the zoom to exactly the fixed scale — flyTo lands a
-  // touch low under the panel padding, so padded/unpadded layouts would otherwise differ
-  _frameT=setTimeout(()=>{
-    _framing=false;
-    const z=viewZoom(gl.getCenter().lat);
-    if(Math.abs(gl.getZoom()-z)>0.01) gl.setZoom(z);
-    // a fix that arrived DURING the fly-in was ignored (lockFollow no-ops while _framing);
-    // now that we've settled, re-check and follow it right away instead of waiting for the
-    // next GPS ping — converges (a stable fix leaves lockFollow a no-op).
-    lockFollow();
-  },1300);
-}
-function lockFollow(){
-  if(locMode!==2||_framing||USER.lat==null) return;
-  const c=gl.getCenter();
-  const off=havKm(c.lat,c.lng,USER.lat,USER.lon);
-  if(off<=LOCK_FOLLOW_KM) return;                       // jitter floor — hold
-  if(off>LOCK_REFRAME_KM){ frameNow(USER.lat,USER.lon); return; }
-  gl.easeTo({center:[USER.lon,USER.lat],duration:600}); // walking — glide onto the fix
-}
-// Engage the lock at load — the map is frozen from the start and never unlocks;
-// the first fix frames on you and the view holds on you from then on.
-setPanLock(true);
-// ROBUST LOCK: disabling the handlers stops pan + zoom, but some touch platforms
-// (notably iOS Safari) can still nudge the camera via exotic gestures. As a belt-and-
-// braces guarantee, whenever a USER gesture (originalEvent present) ends the map while
-// locked and off your fix, snap it straight back onto the fix. Programmatic moves
-// (easeTo / fitBounds) carry no originalEvent, so framing animations never trip this —
-// and any data fetch is positionally gated (see refreshViewport), so the moment spent
-// off-target can't load data for the wrong spot either.
-let _lockSnap=false;
-gl.on('moveend',e=>{
-  if(locMode!==2||_lockSnap||_framing||!e||!e.originalEvent||USER.lat==null) return;
-  const ctr=gl.getCenter();
-  if(havKm(ctr.lat,ctr.lng,USER.lat,USER.lon)<=LOCK_ONTARGET_KM) return;
-  _lockSnap=true;
-  gl.easeTo({center:[USER.lon,USER.lat],duration:200});
-  gl.once('moveend',()=>{ _lockSnap=false; });
-});
+function locate(){ startGpsWatch(); }
 
-// padding keeps the centre in the open area left of the docked panel (desktop only;
-// on mobile the panel is an overlay sheet → no padding)
-let _pad=null;
-function setMapPadding(){
-  const p=MQ_MOBILE.matches
-    ? {top:0,right:0,bottom:0,left:0}
-    : {top:20,left:24,right:336,bottom:24};
-  if(_pad&&_pad.top===p.top&&_pad.left===p.left&&_pad.right===p.right&&_pad.bottom===p.bottom) return;
-  _pad=p; gl.setPadding(p);   // only on change — avoids needless camera nudges
+// Refetch the position-scoped feeds (aircraft/airspace/NPS) + the chart when you've
+// moved far enough that the old 25 mi query no longer covers you well.
+function refetchNearbyFeeds(){
+  lastFetchLat=USER.lat; lastFetchLon=USER.lon;
+  LAYERS.forEach(cfg=>{ if(cfg.viewport){ const st=LAYER_STATE[cfg.id];
+    if(st&&st.started&&!st.loading) runLayer(cfg); } });
+  flyRefresh();
 }
-window.addEventListener('resize',()=>{ clearTimeout(window.__pad);
-  window.__pad=setTimeout(setMapPadding,200); });
-function setUserFix(lat,lon,src,meta){
+// Adopt a committed GPS fix. The first fix kicks every feed around you; a later fix only
+// refetches if you've genuinely moved. Always repaints the SITREP.
+function setUserFix(lat,lon,acc){
   const first=USER.lat==null;
-  if(!first&&src==='ip'&&USER.src==='gps') return; // never downgrade gps -> ip
-  USER.lat=lat; USER.lon=lon; USER.src=src;
-  if(meta&&meta.tz) USER.tz=meta.tz;   // timezone drives the local-time formatting
-  if(!userMarker){
-    const d=el('div'); d.id='user-dot';
-    userMarker=new maplibregl.Marker({element:d}).setLngLat([lon,lat]).addTo(gl);
-  } else userMarker.setLngLat([lon,lat]);
-  updateRing();   // snap the rings onto the new fix (they're anchored to USER, not the map centre)
-  // first fix flies in from the world view; a later refinement only gently recenters
-  if(first){
-    frameNow(lat,lon);
-    // Kick the viewport feeds (aircraft/airspace/NPS) IMMEDIATELY on the first fix — they
-    // query around USER (just set), so we don't have to wait out the ~1.5 s fly-in animation
-    // and its moveend for the initial pull. The moveend still fires later; the generation
-    // token makes the overlap harmless. This is why the first aircraft draw isn't missed.
-    LAYERS.forEach(cfg=>{ if(cfg.viewport){ const st=LAYER_STATE[cfg.id]; if(st&&st.started&&!st.loading) runLayer(cfg); } });
+  USER.lat=lat; USER.lon=lon; USER.src='gps'; USER.ts=Date.now();
+  if(acc!=null) USER.acc=acc;
+  if(first){ refetchNearbyFeeds(); loadWeather(true); }
+  else if(lastFetchLat==null || havKm(lastFetchLat,lastFetchLon,lat,lon)>=REFETCH_MOVE_KM){
+    refetchNearbyFeeds();
   }
-  else lockFollow();   // follows the fix — moves only when your location moves
   sitrepTick();
 }
 
@@ -1155,22 +853,15 @@ const acSub=f=>{const p=f.properties;
   const reg=p.reg&&p.reg.toUpperCase()!==tail?p.reg:'';
   const generic=p.mil?'military aircraft':(p.heli?'helicopter':'aircraft');
   return escapeHtml(p.desc||type||p.op||reg||generic);};
-// aircraft card icon — ✈️ / 🚁 for every aircraft; civil/mil/emergency is by COLOUR
-// (the tail string is tinted to match the map icon via AC_COL)
+// aircraft card icon — ✈️ / 🚁 for every aircraft. All aircraft share ONE identity colour
+// (white); the tail number on a card is tinted with it.
+const AIRCRAFT_COLOR='#eaf1f8';
 const acIcon=f=>f.properties.heli?'🚁':'✈️';
 // tail-number label (callsign → hex → `fb`), clipped
 const acTail=(f,n,fb)=>cut(f.properties.flight||f.properties.hex||fb||'?',n);
 // stable identity for a contact — dedupe across feeds, breach bookkeeping
 const acKey=p=>p.hex||p.flight||'';
-// hexes squawking an emergency — the same airframe also appears in the civil/mil feeds,
-// so those cards filter against this set (the sos card is its one card). Rebuilt in sitrepTick.
-let SOS_HEX=new Set();
-const notSos=f=>!f.properties.hex||!SOS_HEX.has(f.properties.hex);
 const CATS=[
-  {src:'sos', hazard:true, air:true, icon:acIcon, cls:()=>'danger',
-   head:f=>acTail(f,12),
-   sub:acSub,
-   detail:f=>'sq '+(f.properties.code||'7700')},
   {src:'nws', hazard:true, icon:'⚠️',
    cls:f=>/Extreme|Severe/i.test(f.properties.severity)?'danger':'alert',
    head:f=>cut((f.properties.event||'warning').replace(/\s*warning$/i,'').toUpperCase(),22),
@@ -1178,10 +869,10 @@ const CATS=[
    // line 3 = when the warning ends (severity is already in the headline + colour)
    detail:f=>{const e=f.properties.ends,d=e&&new Date(e);
      return d&&!isNaN(d)?'til '+d.toLocaleTimeString([],Object.assign({hour:'numeric',minute:'2-digit'},tzOpt())):'';}},
-  {src:'nearair', hazard:false, air:true, icon:acIcon, cls:()=>'', filter:notSos,
+  {src:'nearair', hazard:false, air:true, icon:acIcon, cls:()=>'',
    head:f=>acTail(f,12),
    sub:acSub, detail:ALT},
-  {src:'mil', hazard:false, air:true, icon:acIcon, cls:()=>'alert', filter:notSos,
+  {src:'mil', hazard:false, air:true, icon:acIcon, cls:()=>'alert',
    head:f=>acTail(f,10),
    sub:acSub, detail:ALT},
   // FAA airspace restrictions that gate a drone — HARD no-fly (red: defense/prohibited/
@@ -1262,59 +953,51 @@ function planeAglFt(a,crossGround){
 const AGL_CAND_MAX_FT=16000;
 
 function sitrepTick(){
-  // SITREP reflects what's inside the OPERATIONAL RANGE (RED_MI around the map centre);
+  // SITREP reflects what's within the OPERATIONAL RANGE (RED_MI) around your GPS position;
   // fully synchronous — reads only already-loaded state.
-  const c=gl.getCenter();
-  const lat=c.lat, lon=c.lng, rangeKm=RED_MI*MI_TO_KM;
-  // aircraft are tracked further out (the 5 mi GREY ring) so you see traffic approaching:
-  // low in the grey ring → amber heads-up; low inside the red ring → red flashing alert
+  const rangeKm=RED_MI*MI_TO_KM;
+  // aircraft are tracked further out (the 5 mi GREY bubble) so you see traffic approaching:
+  // low in the grey bubble → yellow heads-up; low inside the 1 mi red ring → red warning.
   const warnKm=GREY_MI*MI_TO_KM;
-  SOS_HEX=new Set(featsIn('sos').map(f=>f.properties.hex).filter(Boolean));
+  // no GPS fix yet → only the permanent LOCATION card (acquiring, or a denial notice)
+  if(USER.lat==null){
+    $('#sit-body').innerHTML='<div class="sit-empty">'+
+      (geolocationDenied?'LOCATION REQUIRED — ENABLE GPS AND RELOAD':'ACQUIRING GPS…')+'</div>';
+    return;
+  }
+  const lat=USER.lat, lon=USER.lon;
   const rows=[];
-  // render one card record → a 3-line info row. flash: breaching aircraft → .s1 flashes
-  // red/white. col: explicit headline hex (airspace polygon colour), sanitised upstream.
+  // render one card record → a 3-line info row. col: an explicit headline hex (airspace
+  // polygon colour / aircraft identity colour), sanitised upstream.
   const row=c=>rows.push(
-    `<div class="sit-row${c.cls?' '+c.cls:''}${c.flash?' acflash':''}"><span class="ic">${c.ic}</span>`+
+    `<div class="sit-row${c.cls?' '+c.cls:''}"><span class="ic">${c.ic}</span>`+
     `<span class="tx"><span class="s1"${c.col?` style="color:${c.col}"`:''}>${c.l1||''}</span><span class="s2">${c.l2||''}</span><span class="s3">${c.l3||''}</span></span></div>`);
-  // Distance + direction are measured from the map centre (your location).
+  // Distance + direction are measured from your GPS position.
   const dirMi=(la,lo)=>compass(bearing(lat,lon,la,lo))+' '+fmtMi(havKm(lat,lon,la,lo));
 
   const cards=[];   // array of mkCard() records
 
-  // -- LOW AIRCRAFT (two-tier): a plane (civil / military / emergency) under the
-  //    WARN_AGL_FT (400 ft ceiling + FAA_SEP_FT) warning altitude. Where it is
-  //    decides the tier: inside the RED range ring → the RED flashing LOW AIRCRAFT
-  //    alert; out in the 5 mi GREY ring → an AMBER low-aircraft heads-up. Rather
-  //    than a separate pinned card, the plane's OWN card (below) transforms into
-  //    the alert while it's low, and reverts to the normal plane card when it climbs
-  //    out / leaves — always exactly ONE card per plane. planesNear() is the SAME
-  //    deduped collector that drives the chart's TRFC cells, so card, chart and halo
-  //    always agree. AGL = QNH-corrected MSL altitude (planeMslFt) − ground elevation
-  //    UNDER THE PLANE (planeAglFt; cached, keyless Open-Meteo, crosshair fallback).
-  //    breachInfo maps a plane's hex/callsign → {label, inRange}; the item loop
-  //    reads it. Ground aircraft (alt='ground'/'?') skip. --
-  const acGround=groundElevFt(lat,lon);          // ft AMSL at crosshair, null until fetched
-  // Scan for low traffic across the whole GREY ring (5 mi) — a low plane out there
-  // gets the amber heads-up, and one inside the red range ring gets the red alert.
+  // -- LOW AIRCRAFT (two tiers, NO flash): a plane below WARN_AGL_FT (the 400 ft ceiling +
+  //    500 ft separation). WHERE it is sets the tier: inside the 1 mi RED range ring → a
+  //    RED WARNING; out in the 5 mi GREY bubble → a YELLOW heads-up. The plane's OWN card
+  //    (below) transforms into the alert while it's low and reverts on climb-out, so there is
+  //    always exactly ONE card per plane. planesNear() is the same deduped collector that
+  //    feeds the chart's TRFC cells, so card and chart always agree. AGL = QNH-corrected MSL
+  //    altitude − ground elevation UNDER THE PLANE (cached, keyless Open-Meteo). --
+  const acGround=groundElevFt(lat,lon);          // ft AMSL at your position, null until fetched
   const near=planesNear(lat,lon,warnKm);
-  // pull terrain under the crosshair + every plausibly-low plane in one batch
+  // pull terrain under your position + every plausibly-low plane in one batch
   ensureGroundElev([[lat,lon],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
   const lowAc=near
     .map(a=>{ const {ground,agl}=planeAglFt(a,acGround); return {...a,ground,agl}; })
     .filter(a=>a.agl<WARN_AGL_FT);
-  const breachInfo=new Map();   // acKey → {label:'254 ft AGL'/'254 ft', inRange:bool}
-  const redBreach=[];           // low + inside the red range ring → flashing alert + halo
+  const breachInfo=new Map();   // acKey → {label:'254 ft AGL', inRange:bool}
   lowAc.forEach(a=>{
-    const inRange=havKm(lat,lon,a.pt[1],a.pt[0])<=rangeKm;
+    const inRange=havKm(lat,lon,a.pt[1],a.pt[0])<=rangeKm;   // inside the 1 mi red ring?
     breachInfo.set(acKey(a.f.properties),{
       label:Math.max(0,Math.round(a.agl))+U(' ft')+(a.ground==null?'':' AGL'),
       inRange});
-    if(inRange) redBreach.push(a);
   });
-  const acFlash=redBreach.length>0;   // title flashes only for an in-range red breach
-  // pulsing map halo(s) at the RED breaching aircraft only (empty = cleared)
-  setAcAlert(redBreach.map(a=>({type:'Feature',
-    geometry:{type:'Point',coordinates:a.pt},properties:{}})));
 
   // -- FAA CEILING (pinned): surfaces the chart's own airspace gate — reads the SAME
   //    aspCapFt the chart's FAA column reads (LAANC grid + defense TFRs), so they can't
@@ -1401,27 +1084,26 @@ function sitrepTick(){
     'HF radio blackout risk',true));
 
   // -- INDIVIDUAL item cards: one per in-view feature, interleaved. Hazards outrank
-  //    routine traffic; tiers red → amber → rest, distance sorts within each. Capped. --
+  //    routine traffic; tiers red → yellow → rest, distance sorts within each. Capped. --
   const items=[];
   CATS.forEach(cfg=>catItems(cfg,lat,lon,cfg.air?warnKm:rangeKm).forEach(f=>{
     const g=f.geometry; if(!g) return;
-    // pt = closest edge point to the map centre (label + sorting); inside → "overhead"
+    // pt = closest edge point to your position (label + sorting); inside → "overhead"
     const inside=g.type!=='Point'&&pointInFeature(f,lon,lat);
-    let cls=cfg.cls?cfg.cls(f):'', det=null, headOv=null, subOv=null, icOv=null, flash=false, hazardOv=null;
-    // LOW AIRCRAFT: a low plane's own card BECOMES the alert (red flashing inside the red
-    // ring, amber in the grey ring) and reverts on climb-out — one card per plane, never two
+    let cls=cfg.cls?cfg.cls(f):'', det=null, headOv=null, subOv=null, icOv=null, hazardOv=null;
+    // LOW AIRCRAFT: a low plane's own card BECOMES the alert (RED WARNING inside the 1 mi red
+    // ring, YELLOW in the grey bubble) and reverts on climb-out — one card per plane, never two
     const bi=cfg.air?breachInfo.get(acKey(f.properties)):null;
     if(bi){
       icOv=acIcon(f); hazardOv=true; headOv='LOW AIRCRAFT';   // ✈️/🚁, same as every card
-      if(bi.inRange){ cls='danger'; flash=true; }             // red range ring → flashing
-      else { cls='alert'; }                                   // grey ring only → amber heads-up
-      subOv='<span style="color:'+AC_COL[cfg.src]+'">'+acTail(f,12,'aircraft')+'</span>';
+      cls=bi.inRange?'danger':'alert';                        // red inside 1 mi · yellow in the bubble
+      subOv='<span style="color:'+AIRCRAFT_COLOR+'">'+acTail(f,12,'aircraft')+'</span>';
       det=bi.label;
     }
-    // effective hazard uses the per-card override (hazardOv) when set, so an amber
-    // low-aircraft card tiers as an amber hazard (tier 1) — surviving the cap, colouring the title
+    // effective hazard uses the per-card override (hazardOv) when set, so a low-aircraft card
+    // tiers as a hazard — surviving the cap, colouring the verdict
     const hazard=hazardOv!=null?hazardOv:cfg.hazard;
-    const tier=flash?0:(hazard?(cls==='danger'?0:1):2);
+    const tier=hazard?(cls==='danger'?0:1):2;
     let pt, km;
     if(g.type==='Point'){ pt=g.coordinates; km=havKm(lat,lon,pt[1],pt[0]); }
     else {
@@ -1430,7 +1112,7 @@ function sitrepTick(){
     }
     if(!pt) return;
     // pt drives the label (direction/distance) + sorting = the NEAREST EDGE.
-    items.push({cfg,f,pt,cls,tier,inside,km,det,headOv,subOv,icOv,flash,hazardOv});
+    items.push({cfg,f,pt,cls,tier,inside,km,det,headOv,subOv,icOv,hazardOv});
   }));
   // a named airspace zone (esp. Class B) arrives as many shelf polygons — collapse
   // to the nearest single card per class+name
@@ -1441,21 +1123,20 @@ function sitrepTick(){
   const shown=items.filter(it=>it.cfg.src!=='airspace'||nearestAsp.get(aspKey(it))===it);
   shown.sort((a,z)=>a.tier-z.tier||a.km-z.km);
   const ITEM_CAP=14;
-  shown.slice(0,ITEM_CAP).forEach(({cfg,f,pt,cls,inside,km,det,headOv,subOv,icOv,flash,hazardOv})=>{
+  shown.slice(0,ITEM_CAP).forEach(({cfg,f,pt,cls,inside,km,det,headOv,subOv,icOv,hazardOv})=>{
     const detTxt=det!=null?det:(cfg.detail?cfg.detail(f):'');
     const ic=icOv!=null?icOv:(typeof cfg.icon==='function'?cfg.icon(f):cfg.icon);
     const head=headOv!=null?headOv:cfg.head(f);
     const sub=subOv!=null?subOv:((cfg.sub?cfg.sub(f):'')||'—');
-    // headline colour: airspace takes its polygon colour, a regular aircraft card tints
-    // its tail number to its map-icon colour; a LOW AIRCRAFT override keeps its verdict
-    // colour (tail tinted on l2). Only a bare hex passes, so a feed can't inject.
-    const rawCol=(flash||head==='LOW AIRCRAFT')?null:cfg.src==='airspace'?f.properties._col:cfg.air?AC_COL[cfg.src]:null;
+    // headline colour: airspace takes its polygon colour; a plain aircraft card tints its tail
+    // number to the aircraft identity colour; a LOW AIRCRAFT override keeps its verdict colour
+    // (tail tinted on line 2). Only a bare hex passes, so a feed can't inject markup.
+    const rawCol=(head==='LOW AIRCRAFT')?null:cfg.src==='airspace'?f.properties._col:cfg.air?AIRCRAFT_COLOR:null;
     const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
     // every plane card carries its ground speed on line 3 after the altitude (mph, omit if unknown)
     let l3=(inside?'overhead':dirMi(pt[1],pt[0]))+(detTxt?' · '+detTxt:'');
     if(cfg.air){ const s=Number(f.properties.spd); if(isFinite(s)) l3+=' · '+Math.round(toMph(s))+U(' mph'); }
-    const card=mkCard(cls, ic, head, sub, l3,
-      hazardOv!=null?hazardOv:cfg.hazard, flash?true:undefined, col);
+    const card=mkCard(cls, ic, head, sub, l3, hazardOv!=null?hazardOv:cfg.hazard, undefined, col);
     card.km=km; cards.push(card);   // range → sorts within its category
   });
   general.forEach(c=>cards.push(c));   // solar-flare hazard etc. remain in the ranked stack
@@ -1500,18 +1181,24 @@ function sitrepTick(){
        const detTxt=cfg.detail?cfg.detail(f):'';
        let l3=dirMi(pt[1],pt[0])+(detTxt?' · '+detTxt:'');
        if(cfg.air){ const s=Number(f.properties.spd); if(isFinite(s)) l3+=' · '+Math.round(toMph(s))+U(' mph'); }
-       const rawCol=cfg.src==='airspace'?f.properties._col:cfg.air?AC_COL[cfg.src]:null;
+       const rawCol=cfg.src==='airspace'?f.properties._col:cfg.air?AIRCRAFT_COLOR:null;
        const col=/^#[0-9a-fA-F]{3,8}$/.test(rawCol||'')?rawCol:undefined;
        const cc=mkCard('', ic, head, sub, l3, false, undefined, col);   // neutral general object
        cc.km=km; cards.push(cc);   // out-of-ring → GENERAL category, range-sorted with in-ring items
      });
 
-  // title severity: 0 none · 1 alert (amber) · 2 warn (red). Driven by the
-  // flyability NOW column FIRST — any grounding value/condition reds it, any
-  // reduced ceiling (below the 400 ft cap) OR any unverified gate input
-  // (failed airspace / Kp / radar / weather pull — unknown ≠ clear) yellows
-  // it — then raised further by any hazard card (emergency / severe warning /
-  // restriction) in range.
+  // -- PERMANENT LOCATION CARD — your live GPS fix, always shown so position status is never
+  //    ambiguous (there is no map to glance at). Neutral card; km=-1 heads the general list. --
+  const locCard=mkCard('','📍','GPS LOCK',
+    USER.acc!=null?'accuracy ±'+Math.round(USER.acc)+U(' m'):'locating…',
+    lat.toFixed(4)+', '+lon.toFixed(4), false);
+  locCard.km=-1; cards.push(locCard);
+
+  // verdict severity: 0 go (green) · 1 caution (yellow) · 2 no-go (red). Driven by the
+  // flyability NOW column FIRST — any grounding value/condition reds it, any reduced ceiling
+  // (below the 400 ft cap) OR any unverified gate input (failed airspace / Kp / radar /
+  // weather pull — unknown ≠ clear) yellows it — then raised further by any hazard card
+  // (low aircraft / severe warning / restriction) in range.
   let titleSev=0;
   const g0=FLY.detail&&FLY.detail.grid&&FLY.detail.grid[0];
   if(g0) titleSev=g0.grounded?2:(g0.maxFly<SPEC.regFt?1:0);
@@ -1520,23 +1207,21 @@ function sitrepTick(){
   if(flyNeverVerified()) titleSev=2;
   else if(FLY.detail&&flyUnknown().length) titleSev=Math.max(titleSev,1);
   cards.forEach(c=>{ if(c.hazard) titleSev=Math.max(titleSev,c.cls==='danger'?2:c.cls==='alert'?1:0); });
-  // stamp the verdict on the hidden #sit-title (tests/parity); the visible verdict is the ring colour
+  // the VISIBLE verdict is the CLOCK colour (top-left of the chart: green / yellow / red);
+  // renderClock() reads verdictSeverity. Also stamp the hidden #sit-title for tests/parity.
+  verdictSeverity=titleSev;
+  renderClock();
   { const t=$('#sit-title'); if(t){
     t.classList.remove('warn','alert');
     if(titleSev>=2) t.classList.add('warn'); else if(titleSev>=1) t.classList.add('alert');
-    t.classList.toggle('acflash',acFlash);
   }}
-  // both rings track the verdict colour (green/amber/red); the black outlines stay fixed
-  const sevCol=SEV_COL[titleSev]||SEV_COL[0];
-  ['ly-ring','ly-warnring'].forEach(id=>{
-    if(gl.getLayer(id)) gl.setPaintProperty(id,'line-color',sevCol); });
-  // CARD CATEGORIES, top → bottom: 0 flashing-red breach · 1 red warning · 2 amber alert ·
-  // 3 general objects (every non-promoted aircraft / airspace / etc within 25 mi). A card is
-  // PROMOTED out of general only by a real hazard (flash, or hazard flag + colour) — a plain
-  // amber plane (e.g. military) stays general. WITHIN each category cards sort by RANGE (km
-  // ascending); area-wide cards (data / FAA / Kp / solar / promoted weather — no km) head their
-  // category. WEATHER (wxTail) is the final category, rendered after all of the above.
-  const catOf=c=>c.flash?0:(c.hazard&&c.cls==='danger')?1:(c.hazard&&c.cls==='alert')?2:3;
+  // CARD CATEGORIES, top → bottom: 0 red warning · 1 yellow alert · 2 general objects (every
+  // non-promoted aircraft / airspace / etc within 25 mi). A card is PROMOTED out of general
+  // only by a real hazard (hazard flag + colour) — a plain yellow plane (e.g. military) stays
+  // general. WITHIN each category cards sort by RANGE (km ascending); area-wide cards (data /
+  // FAA / Kp / solar / promoted weather — no km) head their category. WEATHER (wxTail) is the
+  // final category, rendered after all of the above.
+  const catOf=c=>(c.hazard&&c.cls==='danger')?0:(c.hazard&&c.cls==='alert')?1:2;
   const km=c=>c.km==null?-1:c.km;   // area-wide (no location) → head of its category
   const ordered=cards.map((c,i)=>({c,i}))
     .sort((a,z)=>catOf(a.c)-catOf(z.c) || km(a.c)-km(z.c) || a.i-z.i)
@@ -1546,47 +1231,6 @@ function sitrepTick(){
   $('#sit-body').innerHTML=rows.join('');
 }
 
-// Viewport-scoped feeds refetch when the visible bounds change — on every move AND every
-// resize (a resize enlarges the view without a pan, so moveend alone would miss it).
-let moveDebounce=null, lastViewKey=null;
-function refreshViewport(){
-  clearTimeout(moveDebounce);
-  moveDebounce=setTimeout(()=>{
-    scheduleSitrep();   // SITREP + chart recompute for the crosshair (cheap, no network)
-    // POSITIONAL gate: the map is locked on you, so a moveend is the view settling onto
-    // your fix. Only fetch once it's actually ON the fix — a stray nudge before the
-    // snap-back lands off-target and must not fetch for the wrong spot.
-    if(USER.lat==null) return;   // still locating — the boot fallback covers a no-fix load
-    const c0=gl.getCenter();
-    if(havKm(c0.lat,c0.lng,USER.lat,USER.lon)>LOCK_ONTARGET_KM*2) return;
-    // refetch viewport feeds only when the area actually changed (rounded to collapse jitter)
-    const b=gl.getBounds(),z=gl.getZoom();
-    const key=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(n=>n.toFixed(2)).join(',')+'@'+z.toFixed(1);
-    if(key!==lastViewKey){
-      lastViewKey=key;
-      LAYERS.filter(l=>l.viewport).forEach(cfg=>{
-        const st=LAYER_STATE[cfg.id];
-        if(st&&st.started) runLayer(cfg);
-      });
-      refreshBase=Date.now();   // restart the refresh countdown from now
-    }
-    flyOnMove();   // chart DATA refetch (its own threshold)
-  },250);
-}
-gl.on('moveend',refreshViewport);
-gl.on('resize',refreshViewport);   // resize doesn't reliably fire moveend
-
-// ---- MOBILE TWO-PAGE TOGGLE — map and panel are two full-screen pages. Tap the map to
-//      bring the panel up; tap ANYWHERE on the panel to drop back (scrolling fires no
-//      click, so it never flips). Desktop keeps the docked-right panel (MQ). --
-(function panelToggle(){
-  const body=document.body;
-  const open =()=>{ if(MQ_MOBILE.matches) body.classList.add('panel-open'); };
-  const close=()=>body.classList.remove('panel-open');
-  gl.on('click',open);   // MapLibre fires 'click' only on a tap, never a drag/pinch
-  $('#sitrep').addEventListener('click',()=>{ if(MQ_MOBILE.matches) close(); });
-  MQ_MOBILE.addEventListener('change',e=>{ if(!e.matches) close(); });   // rotate to desktop → show docked
-})();
 
 /* =====================================================================
    8. CAN I FLY — the drone-preflight chart (altitudes 400→SFC × NOW/+1/+2/+3h),
@@ -1613,7 +1257,7 @@ const LIM={wind:27};   // aircraft max wind [mph] — gates surface gust + caps 
 // three FIXED radii [statute miles]: RED = OPERATIONAL RANGE (1 mi) — FAA query, red
 // low-aircraft alert, TRFC cap. GREY = OPERATIONAL BUBBLE (5 mi) — traffic net + amber
 // heads-up + PCPN grounding. VIEW = 10 mi — the framing radius + tightest allowed zoom.
-const RED_MI=1, GREY_MI=5, VIEW_MI=10;
+const RED_MI=1, GREY_MI=5;
 const RNG={mi:RED_MI};
 // #3 DATA RADIUS [mi] — a FIXED radius, centred on YOU, that always covers the visible
 // map plus a bit on any device. This is the old "on screen": everything within it is
@@ -1773,9 +1417,9 @@ async function sampleRadarPrecip(lat,lon,rngMi){
   const cx=xf*256, cy=yf*256;                          // global pixel coords at z8
   const tx0=Math.floor((cx-rPx)/256), tx1=Math.floor((cx+rPx)/256);
   const ty0=Math.max(0,Math.floor((cy-rPx)/256)), ty1=Math.min(n-1,Math.floor((cy+rPx)/256));
-  // cache key = the current refresh window (radarBust); re-sampling within a window
-  // reuses the memoised verdict (and shares the browser tile cache with the map layer)
-  const bust=radarBust();
+  // cache key = the current refresh window; re-sampling within a window reuses the
+  // memoised verdict (and shares the browser tile cache across the two range samples)
+  const bust=currentRadarBust();
   const key=bust+'|'+lat.toFixed(3)+'|'+lon.toFixed(3)+'|'+rngMi;
   if(radarMemo.has(key)) return radarMemo.get(key);
   const tiles=[];
@@ -1784,7 +1428,7 @@ async function sampleRadarPrecip(lat,lon,rngMi){
   const imgs=await Promise.all(tiles.map(t=>new Promise((res,rej)=>{
     const im=new Image(); im.crossOrigin='anonymous';
     im.onload=()=>res({t,im}); im.onerror=()=>rej(new Error('radar tile failed'));
-    im.src=RADAR_URL.replace('{z}',RADAR_Z).replace('{x}',t.x).replace('{y}',t.y)+'?'+bust;
+    im.src=RADAR_TILE_URL.replace('{z}',RADAR_Z).replace('{x}',t.x).replace('{y}',t.y)+'?'+bust;
   })));
   const w=(tx1-tx0+1)*256, h=(ty1-ty0+1)*256;
   const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
@@ -1809,8 +1453,8 @@ async function sampleRadarPrecip(lat,lon,rngMi){
 // restrictive plane wins (Infinity = none, < 0 grounds). Scans only the RANGE RING —
 // grey-ring aircraft are tracked as cards but don't cap the chart until in range.
 function flyTrafficCeilFt(){
-  const c=gl.getCenter();
-  const cross=groundElevFt(c.lat,c.lng);   // ft AMSL at crosshair, fallback ground
+  const c={lat:USER.lat,lng:USER.lon};
+  const cross=groundElevFt(c.lat,c.lng);   // ft AMSL at your position, fallback ground
   const near=planesNear(c.lat,c.lng,RNG.mi*MI_TO_KM);
   ensureGroundElev([[c.lat,c.lng],...near.filter(a=>a.alt<AGL_CAND_MAX_FT).map(a=>[a.pt[1],a.pt[0]])]);
   let ceil=Infinity;
@@ -1869,7 +1513,7 @@ window.__sitrep.fly={FLY,SPEC,LIM,RNG,paint:flyPaint,refresh:flyRefresh};   // d
 // (PROH) or national-security UAS (NSUF) zone that grounds the chart. Defense zones are
 // excluded (the FAA cap already grounds those); conditional/advisory zones never ground.
 function flyRestriction(){
-  const c=gl.getCenter(); let hit=null;
+  const c={lat:USER.lat,lng:USER.lon}; let hit=null;
   featsIn('airspace').forEach(f=>{
     const p=f.properties;
     if(hit||p.sev!=='hard'||p.cls==='DEF') return;
@@ -2012,10 +1656,12 @@ function flyComputeDetail(){
 }
 
 const FLY_GRID_ATTRS='class="grid"';
+// the chart's top-left header cell = the VERDICT CLOCK (live local time, verdict-tinted)
+const clockCellHtml=()=>`<span class="ga clock ${VERDICT_CLASS[verdictSeverity]}">${clockText()}</span>`;
 function flyBoardHtml(b){
   const unit=u=>u?`<i class="gu">${u}</i>`:'';
-  const cell=c=>`<span class="gc${c.st?' '+c.st:''}${c.rsn?' rsn':''}${c.flash?' acflash':''}">${c.v==null?'':c.v}${unit(c.u)}</span>`;
-  const head=`<div class="grow ghead"><span class="ga"></span>${b.colLabels.map(l=>`<span class="gc${l.st?' '+l.st:''}${l.now?' now':''}">${l.v}</span>`).join('')}</div>`;
+  const cell=c=>`<span class="gc${c.st?' '+c.st:''}${c.rsn?' rsn':''}">${c.v==null?'':c.v}${unit(c.u)}</span>`;
+  const head=`<div class="grow ghead">${clockCellHtml()}${b.colLabels.map(l=>`<span class="gc${l.st?' '+l.st:''}${l.now?' now':''}">${l.v}</span>`).join('')}</div>`;
   const alts=b.altRows.map(r=>`<div class="grow"><span class="ga${r.st?' '+r.st:''}${r.hi?' hi':''}">${r.a}${unit(r.u)}</span>${r.cells.map(cell).join('')}</div>`).join('');
   const gust=`<div class="grow ggust"><span class="ga${b.gustSt?' '+b.gustSt:''}">gust</span>${b.gustCells.map(cell).join('')}</div>`;
   return `<div ${FLY_GRID_ATTRS}>${head}${alts}${gust}</div>`;
@@ -2024,7 +1670,7 @@ function flyBoardHtml(b){
 function flySkeletonHtml(){
   const sk='<span class="gc"><i class="sk"></i></span>'.repeat(1+FC_HOURS);
   const cols=['now',...Array.from({length:FC_HOURS},(_,k)=>'+'+(k+1)+'h')];
-  const head='<div class="grow ghead"><span class="ga"></span>'
+  const head='<div class="grow ghead">'+clockCellHtml()
     +cols.map((l,i)=>`<span class="gc${i===0?' now':''}">${l}</span>`).join('')+'</div>';
   const rows=ALTS.map(ft=>`<div class="grow"><span class="ga">${ft===0?'sfc':comma(ft)}${ft===ALTS[0]?'<i class="gu">ft</i>':''}</span>${sk}</div>`).join('');
   const gust=`<div class="grow ggust"><span class="ga">gust</span>${sk}</div>`;
@@ -2045,11 +1691,11 @@ let flyBusy=false, flyAgain=false, flyKpAt=0, flyAloftAt=0;
 const KP_STALE_MS=15*60*1000;   // a transient SWPC blip may not wipe a recent Kp
 const ALOFT_TTL_MS=15000;       // winds-aloft is an hourly model — 15 s is already generous
 async function flyRefresh(){
+  if(USER.lat==null) return;   // GPS-located only — nothing to compute pre-fix
   if(flyBusy){ flyAgain=true; return; }
   flyBusy=true;
   try{
-    const c=gl.getCenter();
-    const base={lat:c.lat,lon:c.lng};
+    const base={lat:USER.lat,lon:USER.lon};
     const rngMi=RNG.mi;   // snapshot — the radius can't shift mid-fetch
     if(aspCache==null) hydrateAsp();
     const cc=aspCache;
@@ -2118,151 +1764,55 @@ async function flyRefresh(){
     if(flyAgain){ flyAgain=false; flyRefresh(); }
   }
 }
-// viewport changed: refetch only when the crosshair really moved (threshold = the
-// airspace cache tolerance)
+// You've moved: refresh the weather card for the new position, and refetch the chart
+// DATA if you've moved beyond the airspace-cache tolerance.
 function flyOnMove(){
-  loadWeather();   // refresh the weather card for the new crosshair (self-throttled)
-  if(FLY.data&&havKm(FLY.data.lat,FLY.data.lon,gl.getCenter().lat,gl.getCenter().lng)<ASP_TOL_KM) return;
+  loadWeather();
+  if(FLY.data && havKm(FLY.data.lat,FLY.data.lon,USER.lat,USER.lon)<ASP_TOL_KM) return;
   flyRefresh();
 }
 
 /* =====================================================================
-   9a. EXTRA-ALERT AIRCRAFT HALO — a pulsing red/white beacon under any breaching
-   aircraft (the LOW AIRCRAFT set). setAcAlert() is called each SITREP tick with the
-   breaching positions; the halo pulses while any exist. Static under reduced-motion.
+   9. VERDICT CLOCK — the overall can-I-fly verdict is shown as the COLOUR of the live
+   clock in the chart's top-left corner: green = go, yellow = caution, red = no-go.
+   sitrepTick computes verdictSeverity (0/1/2); the clock ticks every second on its own.
    ===================================================================== */
-let acAlertN=0, acPulseRaf=0;
-const AC_PULSE_REDUCED=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches);
-function setAcAlert(feats){
-  const s=gl.getSource('src-acalert'); if(!s) return;   // not added yet (pre-boot)
-  s.setData({type:'FeatureCollection',features:feats||[]});
-  acAlertN=(feats&&feats.length)||0;
-  if(acAlertN) startAcPulse();
+const VERDICT_CLASS=['go','caution','nogo'];   // CSS class per severity 0/1/2
+let verdictSeverity=0;
+// current local time (device timezone), e.g. "3:07 PM"
+function clockText(){
+  try{ return new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+  catch(e){ return ''; }
 }
-function acPulseFrame(){
-  if(!acAlertN||!gl.getLayer('ly-acalert')){ acPulseRaf=0; return; }
-  const t=(Date.now()%1200)/1200, k=(1-Math.cos(t*2*Math.PI))/2;   // 0→1→0 each 1.2 s
-  gl.setPaintProperty('ly-acalert','circle-radius',10+13*k);
-  gl.setPaintProperty('ly-acalert','circle-opacity',0.12+0.5*(1-k));
-  gl.setPaintProperty('ly-acalert','circle-color',k>0.5?'#ffffff':SEV_COL[2]);
-  acPulseRaf=requestAnimationFrame(acPulseFrame);
-}
-function startAcPulse(){
-  if(!gl.getLayer('ly-acalert')) return;
-  if(AC_PULSE_REDUCED){   // static red halo — no motion
-    gl.setPaintProperty('ly-acalert','circle-radius',15);
-    gl.setPaintProperty('ly-acalert','circle-opacity',0.5);
-    gl.setPaintProperty('ly-acalert','circle-color',SEV_COL[2]);
-    return;
-  }
-  if(!acPulseRaf) acPulseFrame();
+// paint the chart's top-left clock cell: current time, tinted by the verdict
+function renderClock(){
+  const cell=document.querySelector('#fly-board .ga.clock');
+  if(!cell) return;
+  cell.textContent=clockText();
+  cell.className='ga clock '+VERDICT_CLASS[verdictSeverity];
 }
 
 /* =====================================================================
-   9. RANGE RINGS — circles drawn around the map centre at the fixed radii; colour
-   tracks the SITREP verdict (see sitrepTick): green / amber / red.
+   10. BOOT — no map. Start the GPS watch, kick the location-independent feeds, and run
+   the 5 s refresh pulse. Position-scoped feeds (aircraft/airspace/NPS) start on the
+   first GPS fix (see setUserFix); until then the SITREP shows the LOCATION card.
    ===================================================================== */
-// ring colour by title severity 0·1·2 — matches --accent / --warn / --danger
-const SEV_COL=['#2fe07a','#ffb454','#ff4455'];
-const RING_N=384;   // vertices — enough that the ring reads as a true circle (segments < 2 px)
-// a closed [lon,lat] ring approximating a `km`-radius circle (equirectangular — exact
-// enough at these radii); shared by the range rings and the stadium buffers
-function circleRing(lat,lon,km,n){
-  n=n||RING_N;
-  const {dLat,dLon}=geoDeltas(km,lat), ring=[];
-  for(let i=0;i<=n;i++){ const t=i/n*2*Math.PI;
-    ring.push([lon+dLon*Math.cos(t), lat+dLat*Math.sin(t)]); }
-  return ring;
-}
-function ringFC(lat,lon,miles){
-  return {type:'FeatureCollection',features:[{type:'Feature',
-    geometry:{type:'Polygon',coordinates:[circleRing(lat,lon,miles*MI_TO_KM,RING_N)]},properties:{}}]};
-}
-let _ringRaf=0;
-function updateRing(){
-  // Anchor the rings to YOUR FIX, not the map's transient centre. The map is locked on
-  // you, so at rest they're identical — but during the fly-in / a stray-gesture nudge the
-  // centre drifts off you while the user-dot stays put, which left the rings sitting
-  // misaligned. Drawn at USER, the rings are always glued to the dot. Pre-fix: map centre.
-  const c=gl.getCenter();
-  const lat=USER.lat!=null?USER.lat:c.lat, lon=USER.lat!=null?USER.lon:c.lng;
-  const s=gl.getSource('src-ring'); if(s) s.setData(ringFC(lat,lon,RED_MI));
-  const w=gl.getSource('src-warnring'); if(w) w.setData(ringFC(lat,lon,GREY_MI));
-}
-// pre-fix the ring tracks the (default) map centre; once fixed it's anchored to USER and
-// only redraws when the fix moves (setUserFix), so a move burst can't leave it behind
-function scheduleRing(){ if(USER.lat!=null||_ringRaf) return; _ringRaf=requestAnimationFrame(()=>{ _ringRaf=0; updateRing(); }); }
-gl.on('move',scheduleRing);
-
-// caps maxZoom at the fixed viewZoom so the locked scale is identical on every device
-// (a guard — camera input is dead — recomputed only on latitude change)
-const RING_ZOOM_HARD=16;    // the absolute max-zoom ceiling (matches map init)
-const BASE_MIN_ZOOM=1.1;    // the map's init minZoom — the zoom floor
-let _ringZoomKey=null;
-function enforceRingZoom(){
-  const c=gl.getCenter();
-  const key=c.lat.toFixed(2);
-  if(key===_ringZoomKey) return;
-  _ringZoomKey=key;
-  const cap=Math.max(BASE_MIN_ZOOM,Math.min(RING_ZOOM_HARD,viewZoom(c.lat)));
-  if(gl.getMinZoom()!==BASE_MIN_ZOOM) gl.setMinZoom(BASE_MIN_ZOOM);
-  if(Math.abs(gl.getMaxZoom()-cap)>0.02) gl.setMaxZoom(cap);
-}
-gl.on('moveend',enforceRingZoom);
-gl.on('resize',enforceRingZoom);
-
-/* =====================================================================
-   10. BOOT
-   ===================================================================== */
-gl.on('load',()=>{
-  registerIcons();
+function boot(){
   initLayers();
-  // sink airspace + NPS fills/outlines beneath the aircraft icons
-  ['ly-nps','lyl-nps','ly-airspace','lyl-airspace'].forEach(id=>{ if(gl.getLayer(id)&&gl.getLayer('ly-nearair')) gl.moveLayer(id,'ly-nearair'); });
-  // extra-alert halo, just below the plane icons so the icon stays crisp on its own halo
-  gl.addSource('src-acalert',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  gl.addLayer({id:'ly-acalert',type:'circle',source:'src-acalert',
-    paint:{'circle-radius':14,'circle-color':SEV_COL[2],'circle-opacity':0.4,
-      'circle-stroke-color':'#ffffff','circle-stroke-width':1.5,'circle-stroke-opacity':0.9}});
-  if(gl.getLayer('ly-nearair')) gl.moveLayer('ly-acalert','ly-nearair');
-  // RANGE RINGS — two solid verdict-coloured circles, same thickness, each with a black
-  // outline (a wider black line under the colour → black edge inside + outside). No dots,
-  // dashes, glow or blur. Both share one source; the colour tracks the verdict.
-  const RING_JOIN={'line-join':'round'};
-  const RING_W=1.25, RING_CASE_W=2.25;
-  // OPERATIONAL BUBBLE — outer 5 mi circle
-  gl.addSource('src-warnring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  gl.addLayer({id:'ly-warnring-case',type:'line',source:'src-warnring',layout:RING_JOIN,
-    paint:{'line-color':'#000000','line-width':RING_CASE_W}});
-  gl.addLayer({id:'ly-warnring',type:'line',source:'src-warnring',layout:RING_JOIN,
-    paint:{'line-color':SEV_COL[0],'line-width':RING_W}});
-  // OPERATIONAL RANGE — inner 1 mi circle, on top
-  gl.addSource('src-ring',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  gl.addLayer({id:'ly-ring-case',type:'line',source:'src-ring',layout:RING_JOIN,
-    paint:{'line-color':'#000000','line-width':RING_CASE_W}});
-  gl.addLayer({id:'ly-ring',type:'line',source:'src-ring',layout:RING_JOIN,
-    paint:{'line-color':SEV_COL[0],'line-width':RING_W}});
-  updateRing();
-  enforceRingZoom();   // establish the initial max-zoom cap
-  // Pull location-INDEPENDENT feeds once on load (mil/sos/SPC); SKIP viewport feeds
-  // (aircraft/airspace/NPS) pre-fix — a query over the default centre is wasted work.
-  // The first fix's moveend loads the viewport feeds around YOU (fallback below if none lands).
+  // location-INDEPENDENT feeds load now (military aircraft, NWS warnings, SPC outlook);
+  // position-scoped feeds wait for the first fix, which kicks them via setUserFix().
   LAYERS.forEach(cfg=>{ LAYER_STATE[cfg.id].started=true; if(!cfg.viewport) runLayer(cfg); });
-  // ONLY-if-no-fix fallback: if location never resolves, pull around the default centre so
-  // the app isn't empty. Timed past the GPS settle + IP fallback so it can't race a fix.
-  setTimeout(()=>{ if(USER.lat==null){
-    LAYERS.forEach(cfg=>{ if(cfg.viewport) runLayer(cfg); });
-    flyRefresh(); loadWeather(true); } },GEO_IP_FALLBACK_MS+2500);
-  refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick(); // auto-refresh pulse (5 s)
-  loadXray(); setInterval(loadXray,180000); // space weather: GOES X-ray flare (SITREP card)
-  setMapPadding();
-  enforceRingZoom();   // recompute the cap now that desktop panel padding is applied
-  flyRender();   // chart skeleton now; the first DATA pull happens on the fix's frame
-  locate();
-  sitrepTick(); // SITREP works off the map area, even before a location fix
+  refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick();   // 5 s data pulse
+  loadXray(); setInterval(loadXray,180000);                               // GOES X-ray flare card
+  setInterval(renderClock,1000);                                          // live clock tick
+  flyRender();     // chart skeleton until the first fix pulls data
+  locate();        // start the GPS watch
+  sitrepTick();    // shows ACQUIRING GPS / the LOCATION card until a fix lands
   if(!sitrepTimer) sitrepTimer=setInterval(sitrepTick,90000);
-  [700,3000,7000].forEach(t=>setTimeout(()=>{ setMapPadding(); sitrepTick(); },t));
-});
+  window.__sitrep.ready=true;   // test/boot signal (replaces the old map 'load')
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
+else boot();
 </script>
 </body>
 </html>
