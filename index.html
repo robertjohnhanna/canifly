@@ -783,7 +783,6 @@ const GOOD_ACCURACY_M=65;         // a ping at least this accurate commits immed
 const POSITION_SMOOTHING=0.25;    // low-pass factor for stationary jitter (0 frozen … 1 raw)
 const REAL_MOVE_KM=0.05;          // a fix farther than this from the smoothed point = a real move → snap
 const REFETCH_MOVE_KM=0.5;        // moving this far refetches nearby aircraft/airspace for the new area
-const ACC_WARN_M=50;             // GPS accuracy worse than this (m ≈ 164 ft) → yellow GPS card + can raise verdict to caution
 
 let firstFixCommitted=false, bestFirstPing=null, bestAccuracyM=Infinity;
 let smoothedLat=null, smoothedLon=null;
@@ -985,7 +984,7 @@ function sitrepTick(){
     if(geolocationDenied){
       row(mkCard('danger','📍','LOCATION REQUIRED','enable GPS and reload','permission denied',true));
     }else{
-      row(mkCard('danger','📍','GPS LOCK','locating…','waiting for fix',true));
+      row(mkCard('','📍','GPS LOCK','locating…','waiting for fix',false));
     }
     $('#sit-body').innerHTML=rows.join('');
     return;
@@ -1214,20 +1213,10 @@ function sitrepTick(){
 
   // -- PERMANENT LOCATION CARD — your live GPS fix, always shown so position status is never
   //    ambiguous (there is no map to glance at). Sits in the bottom WEATHER group, as the very
-  //    last card (appended to wxTail below). Pre-lock is red; a significantly inaccurate lock
-  //    ( > ACC_WARN_M ) is yellow + hazard so the verdict clock can go caution.
-  const accM = USER.acc;
-  const accPoor = accM != null && accM > ACC_WARN_M;
-  const locCard = mkCard(
-    accPoor ? 'alert' : '',
-    '📍',
-    'GPS LOCK',
-    accM != null
-      ? 'accuracy ±' + Math.round(accM * 3.28084) + U(' ft') + (accPoor ? ' · poor' : '')
-      : 'locating…',
-    lat.toFixed(4) + ', ' + lon.toFixed(4),
-    accPoor
-  );
+  //    last card (appended to wxTail below). --
+  const locCard=mkCard('','📍','GPS LOCK',
+    USER.acc!=null?'accuracy ±'+Math.round(USER.acc* 3.28084)+U(' ft'):'locating…',
+    lat.toFixed(4)+', '+lon.toFixed(4), false);
   wxTail.push(locCard);
 
   // verdict severity: 0 go (green) · 1 caution (yellow) · 2 no-go (red). Driven by the
