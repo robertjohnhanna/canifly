@@ -142,7 +142,7 @@ scroll, so cards changed size between the fit and scroll states. */
      clock colour — there is no map. -->
 <main id="app">
   <section id="fly-pane">
-    <div id="fly-board" role="group" aria-label="Can I Fly? drone preflight"></div>
+    <div id="fly-board" role="group" aria-label="canifly"></div>
   </section>
   <!-- hidden canonical verdict element; sitrepTick stamps its class (tests/parity) -->
   <span id="sit-title" hidden></span>
@@ -741,7 +741,7 @@ function wxCard(wxState, wn){
     if(wn.grounded && WXHEAD[wn.reason]){
       const [ic,head,sub]=WXHEAD[wn.reason];
       return {pin:true, card:mkCard('danger',ic,head,sub,condLine(),true)};
-    }
+    }               
     // reduced ceiling (not grounded) where WEATHER is the binding cap → yellow
     if(!wn.grounded && (wn.reason==='WIND'||wn.reason==='SKY') && wxCap<SPEC.regFt){
       const wind=wn.reason==='WIND';
