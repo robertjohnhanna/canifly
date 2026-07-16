@@ -70,10 +70,10 @@
   /* reference tags — unit (FT / MPH) and the gust-cell compass direction — ALL one fixed
      size, so ft, mph and direction render identically despite sitting in different cells */
   #fly-pane .gu,#fly-pane .wd{font-size:10px;font-weight:600;color:inherit;letter-spacing:.02em;margin-left:.18em}
-  /* cell fills — fly / can't fly, plus the caution UNKNOWN marker (an unverified gate) */
+  /* cell fills — strictly BINARY: fly / can't fly. No yellow in the grid, ever — the
+     caution colour belongs to the NOW header (the verdict), never to a cell. */
   #fly-pane .gc.good{background:rgba(47,224,122,.14);color:var(--go)}
   #fly-pane .gc.bad{background:rgba(255,68,85,.16);color:var(--nogo)}
-  #fly-pane .gc.unk{background:rgba(255,212,59,.12);color:var(--caution)}
   #fly-pane .ga.bad{color:var(--nogo)}
   #fly-pane .ghead .gc.bad{background:none;color:var(--nogo)}
   #fly-pane .ghead .ga,#fly-pane .ghead .gc{border-bottom:1px solid var(--line);
@@ -358,35 +358,16 @@ const USER={lat:null,lon:null,acc:null};
 
 /* ---------------- Aircraft ----------------
    Every layer def is just {id, refresh, viewport?, loader}. The loader returns a
-   GeoJSON FeatureCollection whose features the SITREP reads (there is no map). Emergency
-   squawks get NO special treatment — a plane in distress is a general aircraft, caught by
-   the position-scoped `nearair` pull like any other. */
-// ONE point pull serves BOTH aircraft layers: the /point result already carries the
-// military traffic (dbFlags bit), so the two layers split a single payload instead of
-// `mil` re-downloading the entire global military list every pulse. The two loaders run
-// back-to-back on the same pulse — while a pull is in flight they join it; once it
-// settles the next call fetches fresh. A rejection reaches every joiner (both fail
-// together — there is one wire, so there is one failure).
-let _acInFlight=null;
-function pointAircraft(){
-  if(_acInFlight) return _acInFlight;
-  _acInFlight=adsbViewport().then(j=>acFeatures(j)).finally(()=>{ _acInFlight=null; });
-  return _acInFlight;
-}
+   GeoJSON FeatureCollection whose features the SITREP reads (there is no map).
+   ONE layer, ONE /point pull — every aircraft in your area, civil and military alike.
+   There is no military split: a plane is a plane (one white identity colour, one card
+   shape, one traffic net); the dbFlags military bit only feeds the line-2 "military
+   aircraft" fallback text. Emergency squawks get NO special treatment either — a plane
+   in distress is a general aircraft, caught by the position-scoped pull like any other. */
 defLayer({
   id:'nearair', refresh:REFRESH_S,
   viewport:true,   // scoped to your GPS area → refetched when you move + every pulse
-  loader: async ()=>
-    ({type:'FeatureCollection',
-      features:(await pointAircraft()).filter(f=>!f.properties.mil)})
-});
-
-defLayer({
-  // military aircraft — the same /point pull as `nearair`, split by the dbFlags bit
-  id:'mil', refresh:REFRESH_S, viewport:true,
-  loader: async ()=>
-    ({type:'FeatureCollection',
-      features:(await pointAircraft()).filter(f=>f.properties.mil)})
+  loader: async ()=>({type:'FeatureCollection',features:acFeatures(await adsbViewport())})
 });
 
 
@@ -914,8 +895,6 @@ const AIRCRAFT_COLOR='#eaf1f8';
 const acIcon=f=>f.properties.heli?'🚁':'✈️';
 // tail-number label (callsign → hex → `fb`), clipped
 const acTail=(f,n,fb)=>cut(f.properties.flight||f.properties.hex||fb||'?',n);
-// stable identity for a contact — dedupe across feeds ('' = anonymous, never deduped)
-const acKey=p=>p.hex||p.flight||'';
 const CATS=[
   {src:'nws', hazard:true, icon:'⚠️',
    cls:f=>/Extreme|Severe/i.test(f.properties.severity)?'danger':'alert',
@@ -924,11 +903,10 @@ const CATS=[
    // line 3 = when the warning ends (severity is already in the headline + colour)
    detail:f=>{const e=f.properties.ends,d=e&&new Date(e);
      return d&&!isNaN(d)?'til '+d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';}},
+  // ALL aircraft, military included — one card shape, one white identity colour
+  // (yellow/red belong to the verdict, never to a plane's identity)
   {src:'nearair', hazard:false, air:true, icon:acIcon, cls:()=>'',
    head:f=>acTail(f,12),
-   sub:acSub, detail:ALT},
-  {src:'mil', hazard:false, air:true, icon:acIcon, cls:()=>'alert',
-   head:f=>acTail(f,10),
    sub:acSub, detail:ALT},
   // FAA airspace restrictions that gate a drone — HARD no-fly (red: defense/prohibited/
   // security) or CONDITIONAL (yellow: restricted/stadium, only when active). hazard:true.
@@ -971,19 +949,16 @@ function catItems(cfg,lat,lon,rKm){
     return !!ne&&ne.km<=rKm;
   });
 }
-// planes within rKm with a usable numeric altitude, deduped by hex across the two
-// feeds — ONE shared collector so the LOW AIRCRAFT card and the chart's TRFC cells agree
+// planes within rKm with a usable numeric altitude — ONE shared collector so the
+// LOW AIRCRAFT card and the chart's TRFC cells agree
 function planesNear(lat,lon,rKm){
-  const out=[], seen=new Set();
-  ['nearair','mil'].forEach(id=>featsIn(id).forEach(f=>{
-    const p=f.properties;
-    const alt=+p.alt; if(!isFinite(alt)) return;   // 'ground'/'?' → not airborne data
+  const out=[];
+  featsIn('nearair').forEach(f=>{
+    const alt=+f.properties.alt; if(!isFinite(alt)) return;   // 'ground'/'?' → not airborne data
     const g=f.geometry&&f.geometry.coordinates; if(!g) return;
     const km=havKm(lat,lon,g[1],g[0]); if(km>rKm) return;
-    const hx=acKey(p);
-    if(hx){ if(seen.has(hx)) return; seen.add(hx); }
     out.push({f,km,alt,pt:g});
-  }));
+  });
   return out;
 }
 // best-estimate MSL altitude [ft]: ADS-B barometric alt is PRESSURE altitude (~27.3
@@ -1108,13 +1083,11 @@ function sitrepTick(){
     if(tier==='red') redFeeds.push(label); else if(tier==='yellow') yellowFeeds.push(label);
   }
   // AIRCRAFT is traffic, not a flyability gate — always YELLOW (missing traffic ≠ grounded),
-  // never red. Shown until the planes are drawn (never loaded, none pulled) or while a feed
-  // is failing. BOTH aircraft layers count: military contacts live ONLY in the `mil` layer
-  // (`nearair` filters them out), so a gap there is a silent gap in the traffic net.
-  // (They split one /point pull, so in practice they fail — and recover — together.)
-  const acPending=['nearair','mil'].some(id=>{ const st=LAYER_STATE[id];
-    return !!(st && st.started && !st.everLoaded && (st.features||[]).length===0); });
-  if(acPending || layerTier('nearair')==='yellow' || layerTier('mil')==='yellow')
+  // never red. Shown until the planes are drawn (never loaded, none pulled) or while the
+  // feed is failing.
+  const acSt=LAYER_STATE.nearair;
+  if((acSt && acSt.started && !acSt.everLoaded && (acSt.features||[]).length===0)
+     || layerTier('nearair')==='yellow')
     yellowFeeds.push('aircraft');
   const dataFeeds=[...redFeeds,...yellowFeeds];
   if(dataFeeds.length){
@@ -1622,12 +1595,11 @@ function flyRestriction(){
 // the sitrep integrations (TRFC cells, PCPN gate, hard-airspace grounding).
 function flyComputeDetail(){
   const {aloft,kp,asp}=FLY.data;
-  // FAA gate unknown (query failing, no usable cache): the ceiling math fails OPEN
-  // (aspCapFt = 400, verdict yellows) — but the GRID must not silently read "clear to
-  // 400", so each column carries an unkAlt marker cell (see altRows below). getLaancCeil/
-  // getDefense refuse to fabricate a "clear"; the chart must not fabricate one either.
-  const aspUnknown=asp==null;
-  const aspCapFt=aspUnknown?SPEC.regFt:(asp.ceilFt<=0?-1:Math.min(SPEC.regFt,asp.ceilFt));
+  // FAA gate unknown (query failing, no usable cache) → the ceiling math fails OPEN
+  // (cap 400). The unknown is surfaced by the VERDICT — the NOW header yellows via
+  // flyUnknown() — and by the DATA card that names the feed; the grid itself stays
+  // strictly binary (green fly / red can't-fly). Colour logic lives on NOW alone.
+  const aspCapFt=asp==null?SPEC.regFt:(asp.ceilFt<=0?-1:Math.min(SPEC.regFt,asp.ceilFt));
   // winds arrive in MPH now, so no conversion — gate at the mph limit, print mph
   const atLim=mph=>mph!=null&&Math.round(mph)>=LIM.wind;
   const one=mph=>mph==null?'—':fmt(mph,0);
@@ -1703,10 +1675,7 @@ function flyComputeDetail(){
     // if a grounding traffic marker collides with a different grounding reason at SFC,
     // bump TRFC up one band so both stay visible (same reason → same marker, no bump)
     if(trfcAlt===0 && reasonAlt===0 && reason!=='TRFC') trfcAlt=50;
-    // unverified FAA gate → a caution marker at the top (400 ft) row of every column
-    // (a grounded column is already all-red — the marker would add nothing there)
-    const unkAlt=(aspUnknown&&!grounded)?SPEC.regFt:null;
-    return {n,prof,gustMph:c.gustMph,windDir:c.windDir,capFt,maxFly,grounded,reason,reasonAlt,trfcAlt,unkAlt};
+    return {n,prof,gustMph:c.gustMph,windDir:c.windDir,capFt,maxFly,grounded,reason,reasonAlt,trfcAlt};
   });
   // hand the NOW column's binding reason to the weather card so its headline MATCHES the
   // chart cell exactly (chart says GUST → card says HIGH WIND, never a different gate)
@@ -1731,9 +1700,6 @@ function flyComputeDetail(){
       // the independent TRFC traffic marker: shown at the traffic ceiling even when another
       // gate owns the binding-reason cell, so a low plane is always visible on the chart
       if(g.trfcAlt===ft) return {v:'TRFC', st:cellState(g,ft), rsn:true};
-      // FAA gate unverified → caution marker (a reason/TRFC cell at 400 outranks it —
-      // that column is already flagged, and the yellow verdict still carries the unknown)
-      if(g.unkAlt===ft) return {v:'FAA?', st:'unk', rsn:true};
       return {v:one(g.prof(ft)), st:cellState(g,ft)};
     });
     // hi = the bold "highest you can fly right now" label (the top green row)
@@ -1753,7 +1719,7 @@ function flyComputeDetail(){
     // SPACE WEATHER and weather cards agree with the chart.
     kpNow:kpAt(0),
     wxNow,
-    grid:grid.map(g=>({n:g.n,maxFly:g.maxFly,grounded:g.grounded,reason:g.reason,reasonAlt:g.reasonAlt,trfcAlt:g.trfcAlt,unkAlt:g.unkAlt}))};
+    grid:grid.map(g=>({n:g.n,maxFly:g.maxFly,grounded:g.grounded,reason:g.reason,reasonAlt:g.reasonAlt,trfcAlt:g.trfcAlt}))};
 }
 
 const FLY_GRID_ATTRS='class="grid"';

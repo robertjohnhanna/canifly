@@ -32,8 +32,7 @@ traffic net). Everything else fetches or renders.
 
 | Feed / call | Endpoint | Provides | Scope | Refresh |
 |---|---|---|---|---|
-| `nearair` | airplanes.live / adsb.fi `/point/{lat}/{lon}/{r}` | civil aircraft | ~25 mi around you | 5 s |
-| `mil` | the **same** `/point` pull, split by the dbFlags military bit | military aircraft | ~25 mi around you | 5 s |
+| `nearair` | airplanes.live / adsb.fi `/point/{lat}/{lon}/{r}` | ALL aircraft (military flagged via dbFlags) | ~25 mi around you | 5 s |
 | `nws` | api.weather.gov `/alerts/active?point=` | active **warnings** covering you | your point | 15 s |
 | `spc` | spc.noaa.gov `day1otlk_*` | severe-wx / tornado outlook | US | 15 min |
 | `airspace` | FAA ArcGIS `services6…` (5 layers) | Class B/C/D, TFR, SUA, NSUFR, stadiums | 25 mi box | 15 min + on move |
@@ -85,8 +84,8 @@ grounded  ⇢  capFt < 0   OR   any grounding gate below
 | **Airspace** | defense TFR · prohibited · security · NPS | in range | **grounds** |
 
 Unknown ≠ clear: a feed that hasn't loaded yet grounds (red) at startup and cautions (yellow)
-on a later blip (fail-safe, `feedTier()`). An unverified FAA gate additionally marks the
-chart's 400 ft row with a yellow `FAA?` cell — the grid never silently reads "clear to 400".
+on a later blip (fail-safe, `feedTier()`). The chart cells themselves stay strictly binary
+(green fly / red can't-fly) — all caution/verdict colour lives on the NOW header.
 
 ---
 
