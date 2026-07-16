@@ -749,11 +749,17 @@ function wxCard(wxState, wn){
       const [ic,head,sub]=WXHEAD[wn.reason];
       return {pin:true, card:mkCard('danger',ic,head,sub,condLine(),true)};
     }               
-    // reduced ceiling (not grounded) where WEATHER is the binding cap → yellow
+    // reduced ceiling (not grounded) where WEATHER is the binding cap → yellow. Show the
+    // ACTUAL highest altitude you can fly (floored to the 50 ft chart step, so the card and the
+    // chart's top green row always agree), and — for cloud — the cloud BASE, so "max fly 300 ft"
+    // is never mistaken for the cloud height. Cloud limits fly to 500 ft below the base.
     if(!wn.grounded && (wn.reason==='WIND'||wn.reason==='SKY') && wxCap<SPEC.regFt){
       const wind=wn.reason==='WIND';
-      return {pin:true, card:mkCard('alert',wind?'💨':'☁️',(wind?'WIND':'CLOUD')+' CEILING '+wxCap+U(' ft'),
-        wind?'winds aloft over max':'low cloud base',condLine(),true)};
+      const flyMax=Math.max(0,Math.floor(wxCap/50)*50);
+      const why=wind ? 'winds aloft over max'
+                     : 'cloud base '+Math.round(wn.cloudCapFt+SPEC.clrFt)+U(' ft');
+      return {pin:true, card:mkCard('alert', wind?'💨':'☁️', wind?'HIGH WIND ALOFT':'LOW CLOUD',
+        'max fly '+flyMax+U(' ft')+' · '+why, condLine(), true)};
     }
     // PRECIPITATION NEARBY: an echo within the 5 mi GREY bubble but not yet grounding — yellow
     if(wn.precipInbound){
