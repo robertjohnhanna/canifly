@@ -71,6 +71,8 @@
     color:var(--ink);border-left:1px solid #16212b}   /* faint rule between time columns */
   /* reference-unit tags (FT, MPH) */
   #fly-pane .gu{font-size:.58em;font-weight:600;color:inherit;letter-spacing:.02em;margin-left:.18em}
+  /* small compass direction, sized like the unit tags, prefixed to the gust-row wind */
+  #fly-pane .wd{font-size:.58em;font-weight:600;color:inherit;letter-spacing:.02em;margin-right:.22em}
   /* cell fills — binary: fly / can't fly */
   #fly-pane .gc.good{background:rgba(47,224,122,.14);color:var(--go)}
   #fly-pane .gc.bad{background:rgba(255,68,85,.16);color:var(--nogo)}
@@ -1351,11 +1353,11 @@ const defUrl=(lat,lon,rng)=>gisUrl('National_Defense_Airspace_TFR_Areas',lat,lon
 const PRES_LEVELS=[1000,975,950,925,900,850,800,700];
 const CLOUD_FEW_PCT=12;
 function aloftUrl(lat,lon){
-  const h=['wind_speed_10m','wind_speed_80m','wind_speed_120m','wind_speed_180m','wind_gusts_10m','visibility',
-    'cloud_cover_low','temperature_2m','dew_point_2m']
+  const h=['wind_speed_10m','wind_direction_10m','wind_speed_80m','wind_speed_120m','wind_speed_180m','wind_gusts_10m',
+    'visibility','cloud_cover_low','temperature_2m','dew_point_2m']
     .concat(PRES_LEVELS.map(p=>`geopotential_height_${p}hPa`))
     .concat(PRES_LEVELS.map(p=>`cloud_cover_${p}hPa`));
-  const cur=['wind_speed_10m','wind_gusts_10m','cloud_cover_low',
+  const cur=['wind_speed_10m','wind_direction_10m','wind_gusts_10m','cloud_cover_low',
     'visibility','temperature_2m','dew_point_2m','pressure_msl']
     .concat(PRES_LEVELS.map(p=>`cloud_cover_${p}hPa`));
   // winds in MPH — the unit we display + gate in — so no kt→mph conversion is needed anywhere
@@ -1404,10 +1406,11 @@ async function getAloft(lat,lon){
       .filter(x=>x.w!=null&&!isNaN(x.w)).sort((a,b)=>a.h-b.h);};
   const gustAt =n=>n===0?(d.current?.wind_gusts_10m??gh[i]):gh[i+n];
   const visAt  =n=>n===0?(cur.visibility??H.visibility?.[i]):H.visibility?.[i+n];
+  const dirAt  =n=>n===0?(d.current?.wind_direction_10m??H.wind_direction_10m?.[i]):H.wind_direction_10m?.[i+n];
   const cols=[];
   for(let n=0;n<=FC_HOURS;n++){
-    // windPts[].w and gustMph are in MPH (requested that way); baseFt in ft; visM in metres
-    cols.push({n, windPts:profAt(n), gustMph:gustAt(n), baseFt:cloudBaseAt(n), visM:visAt(n)});
+    // windPts[].w and gustMph are in MPH (requested that way); windDir in °; baseFt in ft; visM in metres
+    cols.push({n, windPts:profAt(n), gustMph:gustAt(n), windDir:dirAt(n), baseFt:cloudBaseAt(n), visM:visAt(n)});
   }
   return {cols};
 }
@@ -1674,7 +1677,7 @@ function flyComputeDetail(){
     // if a grounding traffic marker collides with a different grounding reason at SFC,
     // bump TRFC up one band so both stay visible (same reason → same marker, no bump)
     if(trfcAlt===0 && reasonAlt===0 && reason!=='TRFC') trfcAlt=50;
-    return {n,prof,gustMph:c.gustMph,capFt,maxFly,grounded,reason,reasonAlt,trfcAlt};
+    return {n,prof,gustMph:c.gustMph,windDir:c.windDir,capFt,maxFly,grounded,reason,reasonAlt,trfcAlt};
   });
   // hand the NOW column's binding reason to the weather card so its headline MATCHES the
   // chart cell exactly (chart says GUST → card says HIGH WIND, never a different gate)
@@ -1706,10 +1709,11 @@ function flyComputeDetail(){
       st:cells.length&&cells[0].st==='bad'?'bad':'',
       hi:nowMaxFly>=0&&ft===nowMaxFly, cells};
   });
-  const gustCells=grid.map((g,i)=>({v:one(g.gustMph), st:atLim(g.gustMph)?'bad':'',
+  // gust row: shows wind DIRECTION (8-point compass, small) + gust speed. It no longer changes
+  // colour — a gust grounding already surfaces on the surface row (the red 'GUST' reason cell).
+  const gustCells=grid.map((g,i)=>({v:one(g.gustMph), dir:g.windDir!=null?compass(g.windDir):'',
     u:i===grid.length-1?'mph':''}));
-  const gustSt=gustCells.length&&gustCells[0].st==='bad'?'bad':'';
-  return {board:{colLabels,gustCells,gustSt,altRows},
+  return {board:{colLabels,gustCells,altRows},
     // aspCapFt: LAANC ceiling gate (-1 grounds, <400 caps, 400 = no limit); aspUnknown =
     // the FAA query failed (fail-open). Read by the SITREP's FAA CEILING card.
     aspCapFt, aspUnknown:asp==null,
@@ -1725,12 +1729,13 @@ const FLY_GRID_ATTRS='class="grid"';
 const clockCellHtml=()=>`<span class="ga clock">${clockInnerHtml()}</span>`;
 function flyBoardHtml(b){
   const unit=u=>u?`<i class="gu">${u}</i>`:'';
-  const cell=c=>`<span class="gc${c.st?' '+c.st:''}${c.rsn?' rsn':''}">${c.v==null?'':c.v}${unit(c.u)}</span>`;
+  const wd=d=>d?`<i class="wd">${d}</i>`:'';   // small compass prefix (gust row only)
+  const cell=c=>`<span class="gc${c.st?' '+c.st:''}${c.rsn?' rsn':''}">${wd(c.dir)}${c.v==null?'':c.v}${unit(c.u)}</span>`;
   // the NOW header is rendered WITH the current verdict class baked in (not left uncoloured for
   // renderClock to fill later) so it never flickers to the default ink between refreshes.
   const head=`<div class="grow ghead">${clockCellHtml()}${b.colLabels.map(l=>`<span class="gc${l.st?' '+l.st:''}${l.now?' now '+VERDICT_CLASS[verdictSeverity]:''}">${l.v}</span>`).join('')}</div>`;
   const alts=b.altRows.map(r=>`<div class="grow"><span class="ga${r.st?' '+r.st:''}${r.hi?' hi':''}">${r.a}${unit(r.u)}</span>${r.cells.map(cell).join('')}</div>`).join('');
-  const gust=`<div class="grow ggust"><span class="ga${b.gustSt?' '+b.gustSt:''}">gust</span>${b.gustCells.map(cell).join('')}</div>`;
+  const gust=`<div class="grow ggust"><span class="ga">gust</span>${b.gustCells.map(cell).join('')}</div>`;
   return `<div ${FLY_GRID_ATTRS}>${head}${alts}${gust}</div>`;
 }
 // pre-data skeleton: the real grid frame with shimmer bars, so nothing shifts on load
