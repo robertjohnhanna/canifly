@@ -935,9 +935,10 @@ const aspUrl=(lat,lon,rng)=>gisUrl('FAA_UAS_FacilityMap_Data',lat,lon,rng,'CEILI
 const defUrl=(lat,lon,rng)=>gisUrl('National_Defense_Airspace_TFR_Areas',lat,lon,rng,'NAME');   // defense TFRs
 const PRES_LEVELS=[1000,975,950,925,900,850,800,700];   // pressure levels scanned for cloud decks
 const CLOUD_FEW_PCT=12;   // lowest level with ≥ this % cover = the base
+const PRECIP_POP_PCT=60;   // FUTURE precip gate — hourly precip probability ≥ this grounds a +Nh column (planning only; NOW uses live radar). Credibility > sensitivity: NOW carries fail-safe, so a forecast row should read believable, not eager
 function aloftUrl(lat,lon){
   const h=['wind_speed_10m','wind_direction_10m','wind_speed_80m','wind_speed_120m','wind_speed_180m','wind_gusts_10m',
-    'visibility','cloud_cover_low','temperature_2m','dew_point_2m']
+    'visibility','cloud_cover_low','temperature_2m','dew_point_2m','precipitation_probability']   // pop feeds the FUTURE precip gate (NOW uses radar)
     .concat(PRES_LEVELS.map(p=>`geopotential_height_${p}hPa`))
     .concat(PRES_LEVELS.map(p=>`cloud_cover_${p}hPa`));
   const cur=['wind_speed_10m','wind_direction_10m','wind_gusts_10m','cloud_cover_low',
@@ -985,9 +986,10 @@ async function getAloft(lat,lon){   // surface + winds aloft + gust + vis + clou
   const gustAt =n=>n===0?(d.current?.wind_gusts_10m??gh[i]):gh[i+n];
   const visAt  =n=>n===0?(cur.visibility??H.visibility?.[i]):H.visibility?.[i+n];
   const dirAt  =n=>n===0?(d.current?.wind_direction_10m??H.wind_direction_10m?.[i]):H.wind_direction_10m?.[i+n];
+  const popAt  =n=>H.precipitation_probability?.[i+n];   // % chance of precip that hour (future columns only)
   const cols=[];
   for(let n=0;n<=FC_HOURS;n++){
-    cols.push({n, windPts:profAt(n), gustMph:gustAt(n), windDir:dirAt(n), baseFt:cloudBaseAt(n), visM:visAt(n)});   // winds/gust mph · dir ° · base ft · vis metres (converted at use)
+    cols.push({n, windPts:profAt(n), gustMph:gustAt(n), windDir:dirAt(n), baseFt:cloudBaseAt(n), visM:visAt(n), pop:popAt(n)});   // winds/gust mph · dir ° · base ft · vis metres · pop % (all converted/gated at use)
   }
   return {cols};
 }
@@ -1190,7 +1192,8 @@ function flyComputeDetail(){   // apply every gate and build the chart render mo
     const visSM=c.visM!=null?c.visM*M_TO_SM:null;   // metres → SM at the edge
     const kpv=kpAt(n);
     const gGust=atLim(c.gustMph), gVis=visSM!=null&&visSM<SPEC.visSM, gKp=kpv!=null&&kpv>=SPEC.kpGnd;
-    const gPcpn=n===0&&FLY.precip===true;   // radar is a NOW product — only NOW carries the gate
+    const gPcpn=n===0 ? FLY.precip===true                       // NOW = live radar (ground truth, feeds the verdict)
+      : (c.pop!=null && c.pop>=PRECIP_POP_PCT);                 // +Nh = forecast probability (planning row; null pop fails open, no spurious red)
     const globalGrounded=gGust||gVis||gKp||gPcpn||!!restrict;
     const cloudCapFt=c.baseFt==null?Infinity:(c.baseFt-SPEC.clrFt);   // fly 500 below the base
     let hitFt=null; for(const ft of ALTS_UP){ if(atLim(prof(ft))){ hitFt=ft; break; } }   // first over-limit level

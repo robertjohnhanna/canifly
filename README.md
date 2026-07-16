@@ -39,7 +39,7 @@ a card never votes), and `assessTraffic()` is the one traffic assessment they al
 | `spc` | spc.noaa.gov `day1otlk_*` | severe-wx / tornado outlook | US | 15 min |
 | `airspace` | FAA ArcGIS `services6…` (5 layers) | Class B/C/D, TFR, SUA, NSUFR, stadiums | 25 mi box | 15 min + on move |
 | `nps` | NPS ArcGIS `services1…` | national-park lands (no-fly) | 25 mi box | on move |
-| `getAloft` | open-meteo `/v1/forecast` | winds to ~590 ft + gust + dir + cloud + vis (NOW..+3h) | point | ~15 s |
+| `getAloft` | open-meteo `/v1/forecast` | winds to ~590 ft + gust + dir + cloud + vis + precip-prob (NOW..+3h) | point | ~15 s |
 | `loadWeather` | open-meteo `/v1/forecast` (current) | temp / feels / code / wind / hi-lo | point | ~5 min |
 | `getKp` | swpc.noaa.gov Kp forecast | planetary Kp (3-hr bins) | global | ~3 min |
 | `getLaancCeil` | FAA ArcGIS LAANC grid | drone grid ceiling | 1 mi point | cached 6 h |
@@ -109,7 +109,8 @@ grounded  ⇢  capFt < 0   OR   any grounding gate below
 | **Gust** | surface gust | ≥ 27 mph | grounds |
 | **Visibility** | surface vis | < 3 SM | grounds |
 | **Kp** | SWPC Kp | ≥ 7 (G3+) | grounds |
-| **Precip** | NEXRAD | echo ≤ 1 mi | grounds NOW |
+| **Precip (NOW)** | NEXRAD radar | echo ≤ 1 mi | grounds NOW |
+| **Precip (+1..+3h)** | forecast probability | hourly PoP ≥ 60% | grounds that column |
 | **Restriction** | prohibited · security · NPS **under you** | inside the zone | grounds all hours |
 
 The cells are strictly binary — **no yellow ever lives in the grid**. Softer conditions
@@ -123,6 +124,15 @@ rising storm shows in the estimate first). Radar is *sampled*, not drawn: tiles 
 on an offscreen canvas and ≥2 opaque pixels inside the ring counts as an echo (kills
 speckle), one fresh mosaic per 60 s window. Cloud base = the lowest pressure deck with
 ≥12% cover, min'd with an LCL estimate from the temp/dew-point spread.
+
+**Precip: NOW vs future.** The NOW column is live NEXRAD — ground truth, and the only
+precip that feeds the verdict. The +1/+2/+3h columns are a *planning* signal from the
+hourly forecast probability (`PRECIP_POP_PCT`, default **60%**), and they ground the chart
+column without ever touching the verdict. The threshold sits at 60 (not 50 or 75) on
+purpose: a future row is believed only if it's usually right, and the fail-safe imperative
+is already carried by the NOW column (which the user re-checks against live radar before
+launching) — so credibility is weighted over sensitivity. 100% is unreachable (models cap
+hourly PoP near 90–95%); 50% would be wrong about half the time it fires. One tunable knob.
 
 **Unknown ≠ clear** (`feedTier()`, one classifier for every feed): a required feed that has
 **never loaded** grounds the verdict (red) immediately — no grace; a feed that *was* loaded
