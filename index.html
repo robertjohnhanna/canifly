@@ -711,18 +711,17 @@ async function loadWeather(force){
   if(!force && WX && wxLat!=null && havKm(wxLat,wxLon,USER.lat,USER.lon)<2 && Date.now()-wxAt<300000) return;
   wxBusy=true;
   try{
-    // Request wind in KNOTS (not mph) and convert with toMph — EXACTLY as the chart does for
-    // its surface wind (getAloft is in kn) — so the card and the chart's SFC wind read off the
-    // same value + same rounding. Requesting mph here instead let Open-Meteo round the mph and
-    // the chart round the kt→mph independently, which showed a 1 mph discrepancy.
+    // Pull wind straight in MPH (the unit we display + gate in) — the chart does too — so the
+    // card and the chart's SFC wind read off the identical value with a single rounding. (We
+    // used to request knots and convert, which double-rounded and showed a 1 mph discrepancy.)
     const u=`https://api.open-meteo.com/v1/forecast?latitude=${USER.lat.toFixed(3)}&longitude=${USER.lon.toFixed(3)}`
       +`&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m`
       +`&daily=temperature_2m_max,temperature_2m_min`
-      +`&temperature_unit=fahrenheit&wind_speed_unit=kn&timezone=auto&forecast_days=1`;
+      +`&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=1`;
     const d=await getJSON(u,{timeout:12000});
     const cur=d.current||{}, day=d.daily||{};
     WX={tempF:cur.temperature_2m, feelsF:cur.apparent_temperature, code:cur.weather_code,
-        windMph:toMph(cur.wind_speed_10m), windDir:cur.wind_direction_10m,
+        windMph:cur.wind_speed_10m, windDir:cur.wind_direction_10m,
         hiF:(day.temperature_2m_max||[])[0], loF:(day.temperature_2m_min||[])[0]};
     wxLat=USER.lat; wxLon=USER.lon; wxAt=Date.now();
   }catch(e){ /* keep the last-good WX */ }
@@ -1361,10 +1360,11 @@ function aloftUrl(lat,lon){
   const cur=['wind_speed_10m','wind_gusts_10m','cloud_cover_low',
     'visibility','temperature_2m','dew_point_2m','pressure_msl']
     .concat(PRES_LEVELS.map(p=>`cloud_cover_${p}hPa`));
+  // winds in MPH — the unit we display + gate in — so no kt→mph conversion is needed anywhere
   return `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}`
     +`&current=${cur.join(',')}`
     +`&hourly=${h.join(',')}`
-    +`&wind_speed_unit=kn&forecast_days=2&timezone=auto`;
+    +`&wind_speed_unit=mph&forecast_days=2&timezone=auto`;
 }
 // retry a flaky fetch before letting it fail — a transient blip is usually gone next attempt
 async function retry(fn,tries=3,baseMs=600){
@@ -1408,7 +1408,8 @@ async function getAloft(lat,lon){
   const visAt  =n=>n===0?(cur.visibility??H.visibility?.[i]):H.visibility?.[i+n];
   const cols=[];
   for(let n=0;n<=FC_HOURS;n++){
-    cols.push({n, windPts:profAt(n), gustKt:gustAt(n), baseFt:cloudBaseAt(n), visM:visAt(n)});
+    // windPts[].w and gustMph are in MPH (requested that way); baseFt in ft; visM in metres
+    cols.push({n, windPts:profAt(n), gustMph:gustAt(n), baseFt:cloudBaseAt(n), visM:visAt(n)});
   }
   return {cols};
 }
@@ -1604,8 +1605,9 @@ function flyRestriction(){
 function flyComputeDetail(){
   const {aloft,kp,asp}=FLY.data;
   const aspCapFt=asp==null?SPEC.regFt:(asp.ceilFt<=0?-1:Math.min(SPEC.regFt,asp.ceilFt));
-  const atLim=kt=>kt!=null&&Math.round(toMph(kt))>=LIM.wind;
-  const one=kt=>kt==null?'—':fmt(toMph(kt),0);
+  // winds arrive in MPH now, so no conversion — gate at the mph limit, print mph
+  const atLim=mph=>mph!=null&&Math.round(mph)>=LIM.wind;
+  const one=mph=>mph==null?'—':fmt(mph,0);
   const cols=(aloft&&aloft.cols)||[];
   const nowMs=Date.now();
   // Kp in force at hour n = the last bin at or before that hour. NOW (n=0) prefers the
@@ -1628,7 +1630,7 @@ function flyComputeDetail(){
     const prof=makeProfile(c.windPts);
     const visSM=c.visM!=null?c.visM*M_TO_SM:null;
     const kpv=kpAt(n);
-    const gGust=atLim(c.gustKt), gVis=visSM!=null&&visSM<SPEC.visSM, gKp=kpv!=null&&kpv>=SPEC.kpGnd;
+    const gGust=atLim(c.gustMph), gVis=visSM!=null&&visSM<SPEC.visSM, gKp=kpv!=null&&kpv>=SPEC.kpGnd;
     // PCPN — radar is a NOW product, so only the NOW column can carry the gate
     const gPcpn=n===0&&FLY.precip===true;
     const globalGrounded=gGust||gVis||gKp||gPcpn||!!restrict;   // hard airspace grounds all hours
@@ -1638,9 +1640,9 @@ function flyComputeDetail(){
     // capture NOW's weather gates + raw values for the SITREP weather card (its line 3
     // reads real telemetry: gust mph, wind-aloft peak, visibility SM, cloud base)
     if(n===0){
-      let windPeak=0; for(const ft of ALTS){ const v=prof(ft); if(v!=null&&v>windPeak) windPeak=v; }
+      let windPeakMph=0; for(const ft of ALTS){ const v=prof(ft); if(v!=null&&v>windPeakMph) windPeakMph=v; }
       wxNow={gust:gGust,vis:gVis,precip:gPcpn,precipInbound:FLY.precipInbound===true,windCeilFt,cloudCapFt,
-        gustMph:c.gustKt, visSM, windPeakMph:windPeak};
+        gustMph:c.gustMph, visSM, windPeakMph};   // gustMph / windPeakMph are now genuine MPH
     }
     // manned traffic caps the NOW column only (it's a live snapshot, like radar)
     const tCeil = n===0 ? trafficCeil : Infinity;
@@ -1674,7 +1676,7 @@ function flyComputeDetail(){
     // if a grounding traffic marker collides with a different grounding reason at SFC,
     // bump TRFC up one band so both stay visible (same reason → same marker, no bump)
     if(trfcAlt===0 && reasonAlt===0 && reason!=='TRFC') trfcAlt=50;
-    return {n,prof,gustKt:c.gustKt,capFt,maxFly,grounded,reason,reasonAlt,trfcAlt};
+    return {n,prof,gustMph:c.gustMph,capFt,maxFly,grounded,reason,reasonAlt,trfcAlt};
   });
   // hand the NOW column's binding reason to the weather card so its headline MATCHES the
   // chart cell exactly (chart says GUST → card says HIGH WIND, never a different gate)
@@ -1706,7 +1708,7 @@ function flyComputeDetail(){
       st:cells.length&&cells[0].st==='bad'?'bad':'',
       hi:nowMaxFly>=0&&ft===nowMaxFly, cells};
   });
-  const gustCells=grid.map((g,i)=>({v:one(g.gustKt), st:atLim(g.gustKt)?'bad':'',
+  const gustCells=grid.map((g,i)=>({v:one(g.gustMph), st:atLim(g.gustMph)?'bad':'',
     u:i===grid.length-1?'mph':''}));
   const gustSt=gustCells.length&&gustCells[0].st==='bad'?'bad':'';
   return {board:{colLabels,gustCells,gustSt,altRows},
