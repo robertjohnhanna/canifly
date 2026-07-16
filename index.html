@@ -711,14 +711,18 @@ async function loadWeather(force){
   if(!force && WX && wxLat!=null && havKm(wxLat,wxLon,USER.lat,USER.lon)<2 && Date.now()-wxAt<300000) return;
   wxBusy=true;
   try{
+    // Request wind in KNOTS (not mph) and convert with toMph — EXACTLY as the chart does for
+    // its surface wind (getAloft is in kn) — so the card and the chart's SFC wind read off the
+    // same value + same rounding. Requesting mph here instead let Open-Meteo round the mph and
+    // the chart round the kt→mph independently, which showed a 1 mph discrepancy.
     const u=`https://api.open-meteo.com/v1/forecast?latitude=${USER.lat.toFixed(3)}&longitude=${USER.lon.toFixed(3)}`
       +`&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m`
       +`&daily=temperature_2m_max,temperature_2m_min`
-      +`&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=1`;
+      +`&temperature_unit=fahrenheit&wind_speed_unit=kn&timezone=auto&forecast_days=1`;
     const d=await getJSON(u,{timeout:12000});
     const cur=d.current||{}, day=d.daily||{};
     WX={tempF:cur.temperature_2m, feelsF:cur.apparent_temperature, code:cur.weather_code,
-        windMph:cur.wind_speed_10m, windDir:cur.wind_direction_10m,
+        windMph:toMph(cur.wind_speed_10m), windDir:cur.wind_direction_10m,
         hiF:(day.temperature_2m_max||[])[0], loF:(day.temperature_2m_min||[])[0]};
     wxLat=USER.lat; wxLon=USER.lon; wxAt=Date.now();
   }catch(e){ /* keep the last-good WX */ }
