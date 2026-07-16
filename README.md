@@ -34,7 +34,7 @@ a card never votes), and `assessTraffic()` is the one traffic assessment they al
 
 | Feed / call | Endpoint | Provides | Scope | Refresh |
 |---|---|---|---|---|
-| `nearair` | airplanes.live / adsb.fi `/point/{lat}/{lon}/{r}` | ALL aircraft (military flagged via dbFlags) | ~25 mi around you | 5 s |
+| `nearair` | airplanes.live / adsb.fi `/point/{lat}/{lon}/{r}` | ALL aircraft (civil + military, no distinction) | ~25 mi around you | 5 s |
 | `nws` | api.weather.gov `/alerts/active?point=` | active **warnings** covering you | your point | 15 s |
 | `spc` | spc.noaa.gov `day1otlk_*` | severe-wx / tornado outlook | US | 15 min |
 | `airspace` | FAA ArcGIS `services6…` (5 layers) | Class B/C/D, TFR, SUA, NSUFR, stadiums | 25 mi box | 15 min + on move |
@@ -172,7 +172,7 @@ white; the **NOW column header** carries the color. All times shown are device-l
 |---|---|---|---|
 | 1 | Red warning | grounding aircraft (≤ 500 ft AGL in the 1 mi ring) · severe warning · INSIDE hard airspace / NPS · FAA no-fly · Kp G3+ · weather groundings · required feed not loaded | by range |
 | 2 | Yellow alert | low aircraft (capping, or out to 5 mi) · zones nearby (incl. hard) · restricted/stadium · reduced ceiling · Kp 5–6 · poor GPS · stale feed | by range |
-| 3 | General | every non-promoted object < 25 mi — aircraft (incl. military) + airspace, interleaved | by range |
+| 3 | General | every non-promoted object < 25 mi — aircraft + airspace, interleaved | by range |
 | 4 | Weather | SPC outlook, then general conditions | fixed |
 | 5 | Location | GPS lock / accuracy | last |
 

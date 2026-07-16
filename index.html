@@ -195,7 +195,7 @@ function acProps(a){   // ONE property builder per contact — card/chart/AGL fi
     alt:a.alt_baro??a.alt_geom??'?',
     altBaro:(typeof a.alt_baro==='number'?a.alt_baro:null),   // raw baro kept so AGL can QNH-correct it
     spd:a.gs!=null?Math.round(a.gs):'?',   // ground speed [kt]
-    hex:a.hex||'',mil:a.dbFlags&1?1:0};
+    hex:a.hex||''};
 }
 const acFeature=a=>({type:'Feature',
   geometry:{type:'Point',coordinates:[a.lon,a.lat]},
@@ -263,7 +263,7 @@ const LAYERS=[];
 const defLayer=c=>LAYERS.push(c);
 const USER={lat:null,lon:null,acc:null};   // your GPS fix; acc in metres (the browser API's unit)
 
-defLayer({   // AIRCRAFT — one layer, one /point pull, civil + military alike (dbFlags only feeds line-2 text)
+defLayer({   // AIRCRAFT — one layer, one /point pull, every contact civil + military alike (no military tagging)
   id:'nearair', refresh:REFRESH_S,
   viewport:true,   // refetched when you move + every pulse
   loader: async ()=>({type:'FeatureCollection',features:acFeatures(await adsbViewport())})
@@ -633,7 +633,7 @@ const acSub=f=>{const p=f.properties;   // line-2 cascade — never '?', blank, 
   const type=p.type&&p.type!=='?'?p.type:'';
   const tail=String(p.flight||p.hex||'').trim().toUpperCase();
   const reg=p.reg&&p.reg.toUpperCase()!==tail?p.reg:'';
-  const generic=p.mil?'military aircraft':(p.heli?'helicopter':'aircraft');
+  const generic=p.heli?'heli':'plane';   // keep the heli/plane distinction — different ops
   return escapeHtml(p.desc||type||p.op||reg||generic);};   // desc → ICAO type → operator → tail reg → generic
 const AIRCRAFT_COLOR='#eaf1f8';   // the ONE aircraft identity color (white) — tints the tail number
 const acIcon=f=>f.properties.heli?'🚁':'✈️';
