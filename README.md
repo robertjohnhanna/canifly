@@ -110,7 +110,7 @@ grounded  ⇢  capFt < 0   OR   any grounding gate below
 | **Visibility** | surface vis | < 3 SM | grounds |
 | **Kp** | SWPC Kp | ≥ 7 (G3+) | grounds |
 | **Precip (NOW)** | NEXRAD radar | echo ≤ 1 mi | grounds NOW |
-| **Precip (+1..+3h)** | forecast probability | hourly PoP ≥ 60% | grounds that column |
+| **Precip (+1..+3h)** | forecast probability | hourly PoP ≥ 80% | grounds that column |
 | **Restriction** | prohibited · security · NPS **under you** | inside the zone | grounds all hours |
 
 The cells are strictly binary — **no yellow ever lives in the grid**. Softer conditions
@@ -127,12 +127,18 @@ speckle), one fresh mosaic per 60 s window. Cloud base = the lowest pressure dec
 
 **Precip: NOW vs future.** The NOW column is live NEXRAD — ground truth, and the only
 precip that feeds the verdict. The +1/+2/+3h columns are a *planning* signal from the
-hourly forecast probability (`PRECIP_POP_PCT`, default **60%**), and they ground the chart
-column without ever touching the verdict. The threshold sits at 60 (not 50 or 75) on
-purpose: a future row is believed only if it's usually right, and the fail-safe imperative
-is already carried by the NOW column (which the user re-checks against live radar before
-launching) — so credibility is weighted over sensitivity. 100% is unreachable (models cap
-hourly PoP near 90–95%); 50% would be wrong about half the time it fires. One tunable knob.
+hourly forecast probability (`PRECIP_POP_PCT`, default **80%**), and they ground the chart
+column without ever touching the verdict.
+
+The threshold sits high on purpose. PoP is closer to *areal coverage × conditional
+probability* than "chance it rains on **you**" — so a scattered-convective afternoon can
+hold 50–60% for hours while your launch point stays dry, and a low bar would ground the
+future row all day and never verify (cry-wolf, which kills a planning row's credibility).
+80% clears that scattered "maybe" band and fires on organized/likely rain. It's not pushed
+to 90+ because a planning row lives on **lead time** — as a front approaches, PoP ramps
+40→70→90, and warning at 80 leaves runway to act, where 90 warns only once it's nearly a
+lock. The fail-safe imperative is carried by the NOW column (re-checked against live radar
+at launch), so the future row is tuned for a believable, actionable heads-up. One knob.
 
 **Unknown ≠ clear** (`feedTier()`, one classifier for every feed): a required feed that has
 **never loaded** grounds the verdict (red) immediately — no grace; a feed that *was* loaded
