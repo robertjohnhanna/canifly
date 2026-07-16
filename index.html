@@ -90,10 +90,13 @@
   #fly-pane .gc.rsn{font-size:13px;font-weight:800;letter-spacing:.03em}
   /* VERDICT CLOCK — the chart's top-left header cell: live local time, tinted by the
      overall verdict so a glance at the corner answers "can I fly right now?" */
-  #fly-pane .ga.clock{font-weight:800;font-size:15px;letter-spacing:.02em}
+  #fly-pane .ga.clock{justify-content:center;font-weight:800;font-size:15px;letter-spacing:.02em}
+  /* only the DIGITS carry the verdict colour (canifly logic) */
   #fly-pane .ga.clock.go{color:var(--go)}
   #fly-pane .ga.clock.caution{color:var(--caution)}
   #fly-pane .ga.clock.nogo{color:var(--nogo)}
+  /* the H:MM colon is ALWAYS white (never verdict-tinted); JS blinks it each second */
+  #fly-pane .ga.clock .clk-colon{color:#eaf1f8;margin:0 .03em}
   /* loading shimmer — one cell-text line tall, so nothing shifts on load */
   @keyframes flypulse{0%,100%{opacity:1}50%{opacity:.2}}
   #fly-pane .sk{display:block;border-radius:4px;background:var(--ink-dim);opacity:.22;
@@ -1691,11 +1694,13 @@ function flyComputeDetail(){
 
 const FLY_GRID_ATTRS='class="grid"';
 // the chart's top-left header cell = the VERDICT CLOCK (live local time, verdict-tinted)
-const clockCellHtml=()=>`<span class="ga clock ${VERDICT_CLASS[verdictSeverity]}">${clockText()}</span>`;
+const clockCellHtml=()=>`<span class="ga clock ${VERDICT_CLASS[verdictSeverity]}">${clockInnerHtml()}</span>`;
 function flyBoardHtml(b){
   const unit=u=>u?`<i class="gu">${u}</i>`:'';
   const cell=c=>`<span class="gc${c.st?' '+c.st:''}${c.rsn?' rsn':''}">${c.v==null?'':c.v}${unit(c.u)}</span>`;
-  const head=`<div class="grow ghead">${clockCellHtml()}${b.colLabels.map(l=>`<span class="gc${l.st?' '+l.st:''}${l.now?' now':''}">${l.v}</span>`).join('')}</div>`;
+  // the NOW header is rendered WITH the current verdict class baked in (not left uncoloured for
+  // renderClock to fill later) so it never flickers to the default ink between refreshes.
+  const head=`<div class="grow ghead">${clockCellHtml()}${b.colLabels.map(l=>`<span class="gc${l.st?' '+l.st:''}${l.now?' now '+VERDICT_CLASS[verdictSeverity]:''}">${l.v}</span>`).join('')}</div>`;
   const alts=b.altRows.map(r=>`<div class="grow"><span class="ga${r.st?' '+r.st:''}${r.hi?' hi':''}">${r.a}${unit(r.u)}</span>${r.cells.map(cell).join('')}</div>`).join('');
   const gust=`<div class="grow ggust"><span class="ga${b.gustSt?' '+b.gustSt:''}">gust</span>${b.gustCells.map(cell).join('')}</div>`;
   return `<div ${FLY_GRID_ATTRS}>${head}${alts}${gust}</div>`;
@@ -1705,7 +1710,7 @@ function flySkeletonHtml(){
   const sk='<span class="gc"><i class="sk"></i></span>'.repeat(1+FC_HOURS);
   const cols=['now',...Array.from({length:FC_HOURS},(_,k)=>'+'+(k+1)+'h')];
   const head='<div class="grow ghead">'+clockCellHtml()
-    +cols.map((l,i)=>`<span class="gc${i===0?' now':''}">${l}</span>`).join('')+'</div>';
+    +cols.map((l,i)=>`<span class="gc${i===0?' now '+VERDICT_CLASS[verdictSeverity]:''}">${l}</span>`).join('')+'</div>';
   const rows=ALTS.map(ft=>`<div class="grow"><span class="ga">${ft===0?'sfc':comma(ft)}${ft===ALTS[0]?'<i class="gu">ft</i>':''}</span>${sk}</div>`).join('');
   const gust=`<div class="grow ggust"><span class="ga">gust</span>${sk}</div>`;
   return `<div ${FLY_GRID_ATTRS}>${head}${rows}${gust}</div>`;
@@ -1813,19 +1818,34 @@ function flyOnMove(){
    ===================================================================== */
 const VERDICT_CLASS=['go','caution','nogo'];   // CSS class per severity 0/1/2
 let verdictSeverity=0;
-// current local time (device timezone), 24-hour, no AM/PM — e.g. "15:07"
-function clockText(){
-  try{ return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false}); }
-  catch(e){ return ''; }
+// current local time (device timezone), 12-hour, NO AM/PM — {h:'3', m:'07'}
+function clockParts(){
+  const d=new Date(); let h=d.getHours()%12; if(h===0) h=12;
+  return {h:String(h), m:String(d.getMinutes()).padStart(2,'0')};
 }
-// paint the verdict colour onto BOTH the top-left clock and the NOW header cell — the two
-// glance points for "can I fly right now?" — plus the live time on the clock.
+// clock cell contents: verdict-coloured digits either side of a persistent white colon span
+// (its own element so the blink + verdict paint never disturb each other).
+const clockInnerHtml=()=>{ const {h,m}=clockParts();
+  return `<span class="clk-h">${h}</span><span class="clk-colon">:</span><span class="clk-m">${m}</span>`; };
+// Repaint the verdict colour on the clock digits AND the NOW header — the two "can I fly
+// right now?" glance points — plus advance the time. Updates ONLY the digit text (leaving the
+// colon element alone so its blink is uninterrupted), so a stable verdict never flickers.
 function renderClock(){
   const clock=document.querySelector('#fly-board .ga.clock');
-  if(clock){ clock.textContent=clockText(); clock.className='ga clock '+VERDICT_CLASS[verdictSeverity]; }
+  if(clock){
+    let h=clock.querySelector('.clk-h'), m=clock.querySelector('.clk-m');
+    if(!h||!m){ clock.innerHTML=clockInnerHtml(); h=clock.querySelector('.clk-h'); m=clock.querySelector('.clk-m'); }
+    const p=clockParts(); h.textContent=p.h; m.textContent=p.m;
+    clock.className='ga clock '+VERDICT_CLASS[verdictSeverity];
+  }
   const now=document.querySelector('#fly-board .ghead .gc.now');
   if(now) now.className='gc now '+VERDICT_CLASS[verdictSeverity];
 }
+// blink the colon every half-second (on 0.5 s / off 0.5 s = one blink per second). Re-queried
+// each tick so it survives chart re-renders; visibility (not display) keeps the digits steady.
+let _colonVisible=true;
+function blinkColon(){ const c=document.querySelector('#fly-board .clk-colon');
+  if(c) c.style.visibility=(_colonVisible=!_colonVisible)?'visible':'hidden'; }
 
 /* =====================================================================
    8. BOOT — no map. Start the GPS watch, kick the location-independent feeds, and run
@@ -1850,6 +1870,7 @@ function boot(){
   refreshBase=Date.now(); setInterval(refreshTick,1000); refreshTick();   // 5 s data pulse
   loadXray(); setInterval(loadXray,180000);                               // GOES X-ray flare card
   setInterval(renderClock,1000);                                          // live clock tick
+  setInterval(blinkColon,500);                                            // blink the H:MM colon
   flyRender();     // chart skeleton until the first fix pulls data
   locate();        // start the GPS watch
   sitrepTick();    // shows GPS locating card under the loading chart
