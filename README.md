@@ -43,7 +43,6 @@ flowchart LR
 | `getAirspace` | FAA ArcGIS LAANC grid + defense TFR | drone ceiling + no-fly | 1 mi point | cached 6 h |
 | `sampleRadarPrecip` | Iowa Mesonet NEXRAD tiles | reflectivity (sampled off-screen) | 1 mi & 5 mi | 60 s window |
 | `ensureGroundElev` | open-meteo `/v1/elevation` | ground elevation for AGL | per ~1 km cell | on demand |
-| `loadXray` | swpc.noaa.gov GOES X-ray | solar-flare class | global | 3 min |
 
 Winds are requested in **mph** and aircraft speed converted from knots — the only unit conversion left.
 
@@ -93,7 +92,7 @@ on a later blip (fail-safe, `feedTier()`).
 | Severity | Colour | Meaning | Set by |
 |---|---|---|---|
 | 0 | 🟢 green | GO | nothing binds |
-| 1 | 🟡 yellow | CAUTION | ceiling < 400, Kp 5–6, unverified feed, or an amber hazard card |
+| 1 | 🟡 yellow | CAUTION | ceiling < 400, Kp 5–6, unverified feed, or a yellow hazard card |
 | 2 | 🔴 red | NO-GO | grounded, an unverified required feed, or a red hazard card |
 
 The clock itself is white; the **NOW column header** carries the colour.
