@@ -154,7 +154,7 @@ color together, and last-good data keeps painting throughout.
 verdict logic. Each gate scores 0/1/2; cards display a gate's info and rank by its
 severity, but never vote.
 
-| Severity | Colour | Meaning | Gates that score it |
+| Severity | Color | Meaning | Gates that score it |
 |---|---|---|---|
 | 0 | 🟢 green | GO | nothing scores |
 | 1 | 🟡 yellow | CAUTION | reduced ceiling < 400 (FAA / wind aloft / cloud) · a plane that caps (in the ring) or any low plane out to 5 mi · Kp 5–6 · precip within 5 mi · a zone nearby (incl. hard) · non-severe warning here · poor GPS · stale feed |

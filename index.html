@@ -365,6 +365,7 @@ defLayer({   // NPS lands — drones can't launch/land/operate in a unit → har
       +`&spatialRel=esriSpatialRelIntersects&returnGeometry=true&maxAllowableOffset=0.0015`
       +'&outFields=UNIT_NAME,UNIT_TYPE&f=geojson';
     const j=await getJSON(url,{timeout:15000});
+    if(j.error||!Array.isArray(j.features)) throw new Error('NPS query failed');   // ArcGIS error-in-200 is NOT "no parks here" — throw, keep last-good
     const feats=[];
     (j.features||[]).forEach(f=>{ if(!f.geometry) return; const p=f.properties||{};
       feats.push({type:'Feature',geometry:f.geometry,properties:{
@@ -630,7 +631,7 @@ function setUserFix(lat,lon,acc){   // adopt a committed fix — first fix kicks
 // 6. sitrep cards — CATS maps each feed to a card shape; cls = display color · head/sub/detail = lines 1/2/3
 const cut=(s,n)=>escapeHtml(String(s==null?'':s).trim().slice(0,n));   // clip + escape (CSS adds the …)
 const ALT=f=>{const a=f.properties.alt;   // readsb reports alt_baro:'ground' for taxiing aircraft
-  return a==='ground'?'on ground':a!=null&&a!=='?'?a+U(' ft'):'—';};
+  return a==='ground'?'on ground':isFinite(+a)&&a!==''?Math.round(+a)+U(' ft'):'—';};   // numeric-coerced — a feed string can never reach innerHTML
 const CAT_LABEL={A1:'light',A2:'small',A3:'large',A4:'large',A5:'heavy',A6:'high-perf',   // emitter category — broadcast over-air, so often present when DB enrichment isn't
   B1:'glider',B2:'balloon',B4:'ultralight',B6:'drone',B7:'rocket'};                       // (A7 rotorcraft omitted — the 🚁 already says it)
 const SRC_LABEL=s=>/^tisb/.test(s)?'radar-only target':/^mlat/.test(s)?'mlat-only target':'';   // ID-less ghosts: say WHY there's no identity
@@ -997,6 +998,8 @@ async function getAloft(lat,lon){   // surface + winds aloft + gust + vis + clou
   for(let n=0;n<=FC_HOURS;n++){
     cols.push({n, windPts:profAt(n), gustMph:gustAt(n), windDir:dirAt(n), baseFt:cloudBaseAt(n), visM:visAt(n), pop:popAt(n)});   // winds/gust mph · dir ° · base ft · vis metres · pop % (all converted/gated at use)
   }
+  const c0=cols[0];
+  if(!c0.windPts.length&&c0.gustMph==null&&c0.visM==null) throw new Error('aloft response empty');   // a contentless 200 must NOT verify the weather gate (unknown ≠ clear)
   return {cols};
 }
 async function getKp(){   // SWPC planetary-Kp: full time-sorted 3 h bin list, so each grid hour picks its bin
